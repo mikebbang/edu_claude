@@ -1,0 +1,118 @@
+{
+  "id": "C2",
+  "step": "S15_CVD",
+  "process": "CVD",
+  "path": [
+    {
+      "order": "O3",
+      "unit": "CVD33"
+    }
+  ],
+  "k": 1,
+  "n": 272,
+  "badCount": 74,
+  "badRate": 0.272,
+  "overallBadRate": 0.152,
+  "meanValue": 2.317,
+  "overallMeanValue": 2.124,
+  "z": 5.512,
+  "zThreshold": 3.577,
+  "comparison": {
+    "type": "bad_vs_good",
+    "groupA": "CVD33을 지난 bad wafer",
+    "groupB": "CVD33을 지난 good wafer"
+  },
+  "significance": "q < 0.01 그리고 |효과 크기| >= 0.8",
+  "fdc": [
+    {
+      "order": "O3",
+      "unit": "CVD33",
+      "parameter": "Chamber_Pressure",
+      "stat": "mean",
+      "nA": 74,
+      "nB": 198,
+      "meanA": 2.097,
+      "meanB": 2.043,
+      "diff": 0.054,
+      "effectSize": 0.849,
+      "p": 1.212550817562661e-9,
+      "q": 7.275304905375966e-9,
+      "significant": true
+    },
+    {
+      "order": "O3",
+      "unit": "CVD33",
+      "parameter": "Chamber_Pressure",
+      "stat": "max",
+      "nA": 74,
+      "nB": 198,
+      "meanA": 2.184,
+      "meanB": 2.118,
+      "diff": 0.066,
+      "effectSize": 0.811,
+      "p": 2.0210794699124344e-8,
+      "q": 6.063238409737303e-8,
+      "significant": true
+    },
+    {
+      "order": "O3",
+      "unit": "CVD33",
+      "parameter": "Dep_Time",
+      "stat": "max",
+      "nA": 74,
+      "nB": 198,
+      "meanA": 123.319,
+      "meanB": 123.67,
+      "diff": -0.351,
+      "effectSize": -0.212,
+      "p": 0.11420234877207969,
+      "q": 0.22840469754415937,
+      "significant": false
+    },
+    {
+      "order": "O3",
+      "unit": "CVD33",
+      "parameter": "Heater_Temp",
+      "stat": "mean",
+      "nA": 74,
+      "nB": 198,
+      "meanA": 400.585,
+      "meanB": 400.461,
+      "diff": 0.125,
+      "effectSize": 0.151,
+      "p": 0.28845573662087964,
+      "q": 0.43268360493131947,
+      "significant": false
+    },
+    {
+      "order": "O3",
+      "unit": "CVD33",
+      "parameter": "Dep_Time",
+      "stat": "mean",
+      "nA": 74,
+      "nB": 198,
+      "meanA": 120.796,
+      "meanB": 120.764,
+      "diff": 0.032,
+      "effectSize": 0.028,
+      "p": 0.8201862436764886,
+      "q": 0.8497139514755254,
+      "significant": false
+    },
+    {
+      "order": "O3",
+      "unit": "CVD33",
+      "parameter": "Heater_Temp",
+      "stat": "max",
+      "nA": 74,
+      "nB": 198,
+      "meanA": 402.192,
+      "meanB": 402.222,
+      "diff": -0.03,
+      "effectSize": -0.027,
+      "p": 0.8497139514755254,
+      "q": 0.8497139514755254,
+      "significant": false
+    }
+  ]
+}

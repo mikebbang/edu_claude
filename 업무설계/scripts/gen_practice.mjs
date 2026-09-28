@@ -1,4 +1,4 @@
-// 실습용 가상 입력 자료 생성: 불량 wafer 측정값(txt), 설비 진행 이력(csv), FDC 요약(csv)
+// 실습용 가상 입력 자료 생성: 불량 wafer 측정값(txt, good/bad 포함), 설비 진행 이력(csv), FDC 요약(csv)
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { makeRng } from '../../js/rng.js';
@@ -109,7 +109,11 @@ for (let l = 0; l < N_LOT; l++) {
   }
 }
 
-writeFileSync(`${OUT}/불량wafer_측정값.txt`, meas.join('\n') + '\n');
+// good/bad: 실습용으로 value 상위 15%를 bad로 표시 (실제 운영에서는 사용자가 직접 입력)
+const vals = meas.slice(1).map((l) => +l.split('\t')[2]).sort((a, b) => a - b);
+const cut = vals[Math.floor(vals.length * 0.85)];
+const labeled = ['lot\twafer\tvalue\tgood_bad'].concat(meas.slice(1).map((l) => `${l}\t${+l.split('\t')[2] >= cut ? 'bad' : 'good'}`));
+writeFileSync(`${OUT}/불량wafer_측정값.txt`, labeled.join('\n') + '\n');
 writeFileSync(`${OUT}/설비진행이력.csv`, hist.join('\n') + '\n');
 writeFileSync(`${OUT}/FDC요약.csv`, fdc.join('\n') + '\n');
 
