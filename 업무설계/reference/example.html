@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>불량 원인 분석 보고서</title>
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --fill: #f0f0f3;
+    --ink: #1d1d1f;
+    --ink-2: #6e6e73;
+    --ink-3: #a1a1a6;
+    --line: #e2e2e7;
+    --accent: #0071e3;
+    --accent-soft: #e8f1fc;
+    --bad: #ff3b30;
+    --bad-soft: #ffeceb;
+    --good: #34c759;
+    --dot: #b9bcc4;
+    --band: rgba(29, 29, 31, 0.06);
+    --band-edge: rgba(29, 29, 31, 0.22);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.05);
+    --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #000000;
+      --surface: #1c1c1e;
+      --fill: #2c2c2e;
+      --ink: #f5f5f7;
+      --ink-2: #a1a1a6;
+      --ink-3: #6e6e73;
+      --line: #38383a;
+      --accent: #2997ff;
+      --accent-soft: #0f2a47;
+      --bad: #ff453a;
+      --bad-soft: #3b1614;
+      --good: #30d158;
+      --dot: #55575e;
+      --band: rgba(245, 245, 247, 0.07);
+      --band-edge: rgba(245, 245, 247, 0.28);
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, h4, p { margin: 0; }
+  .page { max-width: 1120px; margin: 0 auto; padding: 40px 24px 64px; display: grid; gap: 28px; }
+  .muted { color: var(--ink-2); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header.top { display: grid; gap: 6px; }
+  header.top .eyebrow { font-size: 13px; font-weight: 600; color: var(--accent); }
+  header.top h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; }
+  header.top .meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); }
+
+  section { display: grid; gap: 14px; }
+  .sec-title { display: flex; align-items: baseline; gap: 10px; }
+  .sec-title .no { font-size: 13px; font-weight: 700; color: var(--accent); }
+  .sec-title h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+
+  .card { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); padding: 18px 20px; display: grid; gap: 10px; min-width: 0; }
+  .card h3 { font-size: 15px; font-weight: 700; }
+  .card .cap { font-size: 12px; color: var(--ink-2); }
+  .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+
+  .tile { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px; display: grid; gap: 2px; }
+  .tile b { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .tile b small { font-size: 13px; color: var(--ink-2); margin-left: 2px; font-weight: 600; }
+  .tile span { font-size: 12px; color: var(--ink-2); }
+  .tile.red b, .tile.red b small { color: var(--bad); }
+
+  .narrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .narrow div { display: grid; gap: 6px; }
+  .narrow .n { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .narrow .bar { height: 6px; background: var(--fill); border-radius: 3px; overflow: hidden; }
+  .narrow .bar i { display: block; height: 100%; background: var(--ink-3); border-radius: 3px; }
+  .narrow .last .n { color: var(--bad); }
+  .narrow .last .bar i { background: var(--bad); }
+  .narrow .t { font-size: 12px; color: var(--ink-2); }
+
+  .combo-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .combo-head .rank { width: 28px; height: 28px; border-radius: 50%; background: var(--bad-soft); color: var(--bad); font-weight: 700; display: grid; place-items: center; }
+  .combo-head h3 { font-size: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .chip { background: var(--fill); border-radius: 6px; padding: 2px 9px; font-size: 13px; font-weight: 500; }
+  .chip small { color: var(--ink-2); margin-right: 4px; }
+  .arrow { color: var(--ink-3); font-size: 12px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 980px; background: var(--bad-soft); color: var(--bad); }
+  .pill.gray { background: var(--fill); color: var(--ink-2); }
+  .kv { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+  .kv b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .kv b.red { color: var(--bad); }
+
+  .chart { width: 100%; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .scroll { overflow-x: auto; }
+  .chart.ci svg { max-width: 400px; }
+  .scroll svg { width: auto; max-width: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { display: inline-block; width: 12px; height: 9px; border-radius: 3px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+  td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.sig td:first-child { color: var(--bad); font-weight: 600; }
+
+  .hyp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .hyp .card { align-content: start; }
+  .hyp .claim { font-size: 15px; font-weight: 600; }
+  .evidence { display: flex; flex-wrap: wrap; gap: 6px; }
+  .evidence span { background: var(--fill); border-radius: 980px; padding: 3px 10px; font-size: 12px; }
+  .evidence span b { color: var(--bad); }
+  .todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .todo li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; font-size: 13px; }
+  .todo li::before { content: ""; width: 14px; height: 14px; margin-top: 3px; border: 1.5px solid var(--ink-3); border-radius: 4px; }
+  .action { font-size: 12px; color: var(--accent); font-weight: 600; }
+
+  footer { font-size: 12px; color: var(--ink-3); display: grid; gap: 4px; }
+
+  @media (max-width: 820px) {
+    .grid2, .hyp { grid-template-columns: minmax(0, 1fr); }
+    .grid4, .narrow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .page { padding: 28px 16px 48px; }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+
+  <header class="top">
+    <p class="eyebrow">수율팀 · 불량 원인 분석 보고서</p>
+    <h1>불량 조합 2건 · FDC 유의차 확인</h1>
+    <div class="meta">
+      <span>분석 일시 2026-10-13 09:40</span>
+      <span>입력: 붙여넣은 lot·wafer·value 1,200장 (48 lot)</span>
+      <span>대상 기간 2026-09-15 ~ 2026-10-12</span>
+      <span>판정 기준: 조합 수 보정 envelope (FWER 5%)</span>
+    </div>
+  </header>
+
+  <!-- 1. 분석 요약 -->
+  <section>
+    <div class="sec-title"><span class="no">1</span><h2>분석 요약</h2></div>
+    <div class="grid4">
+      <div class="tile"><b>1,200<small>장</small></b><span>입력 wafer</span></div>
+      <div class="tile"><b>99.3<small>%</small></b><span>설비 이력 매칭 (1,192장)</span></div>
+      <div class="tile"><b>2.08<small>%</small></b><span>전체 평균 불량률</span></div>
+      <div class="tile red"><b>2<small>건</small></b><span>불량 조합</span></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>조합이 좁혀지는 과정</h3><span class="cap">24개 스텝 · order 97개 · unit 조합</span></div>
+      <div class="narrow" id="narrow"></div>
+    </div>
+  </section>
+
+  <!-- 2. Funnel -->
+  <section>
+    <div class="sec-title"><span class="no">2</span><h2>조합 funnel</h2></div>
+    <div class="card">
+      <div class="card-head"><h3>조합 wafer 수 대비 평균 불량률</h3><span class="cap">띠 = 우연히 나올 수 있는 범위 (조합 수 보정)</span></div>
+      <div class="chart" id="funnel"></div>
+      <div class="legend">
+        <span><i style="background:var(--bad);border-radius:50%"></i>불량 조합</span>
+        <span><i style="border:1.5px solid var(--bad);border-radius:50%"></i>관련 조합 (상속·하위 기인)</span>
+        <span><i style="background:var(--dot);border-radius:50%"></i>정상 조합</span>
+        <span><i style="background:var(--band);border:1px solid var(--band-edge)"></i>우연 범위</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 불량 조합별 상세 -->
+  <section>
+    <div class="sec-title"><span class="no">3</span><h2>불량 조합별 상세</h2></div>
+    <div id="combos" style="display:grid;gap:20px"></div>
+  </section>
+
+  <!-- 4. FDC 유의차 -->
+  <section>
+    <div class="sec-title"><span class="no">4</span><h2>FDC 유의차</h2></div>
+    <div id="fdc" style="display:grid;gap:20px"></div>
+  </section>
+
+  <!-- 5. 원인 가설 -->
+  <section>
+    <div class="sec-title"><span class="no">5</span><h2>원인 가설과 확인 요청 사항</h2></div>
+    <div class="hyp">
+      <div class="card">
+        <div class="combo-head"><span class="rank">1</span><h3>S11_ETCH</h3><span class="pill gray">가설 · 확인 필요</span></div>
+        <p class="claim">order2 ETC21을 거친 wafer에서 order4 ETC08의 식각 종료가 늦어짐</p>
+        <div class="evidence">
+          <span>불량률 <b>+0.84%p</b></span>
+          <span>Endpoint_Time <b>+6.4 s</b></span>
+          <span>RF_Reflected <b>+2.8 W</b></span>
+          <span>Chamber_Pressure 차이 없음</span>
+        </div>
+        <ul class="todo">
+          <li>ETC21 식각 후 잔막 두께 측정값 비교 (ETC19·20·22 대비)</li>
+          <li>ETC08 endpoint 검출 조건과 최근 변경 이력</li>
+          <li>ETC21 → ETC08 경로만 분리한 split 진행 여부</li>
+        </ul>
+        <span class="action">조치 후보: ETC21 → ETC08 경로 회피 검토</span>
+      </div>
+      <div class="card">
+        <div class="combo-head"><span class="rank">2</span><h3>S16_CVD</h3><span class="pill gray">가설 · 확인 필요</span></div>
+        <p class="claim">order3 CVD15의 챔버 압력이 10/01 이후 상승</p>
+        <div class="evidence">
+          <span>불량률 <b>+0.48%p</b> (10/01 이후)</span>
+          <span>Chamber_Pressure <b>+0.12 Torr</b></span>
+          <span>Heater_Temp·Dep_Time 차이 없음</span>
+        </div>
+        <ul class="todo">
+          <li>CVD15의 09/30 ~ 10/01 PM·부품 교체 이력</li>
+          <li>압력 게이지·스로틀 밸브 교정 상태</li>
+          <li>10/01 이후 CVD15 진행 wafer 추가 검사 여부</li>
+        </ul>
+        <span class="action">조치 후보: CVD15 점검 후 재가동</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>불량 판정: 조합 수로 보정한 envelope 초과 · 한 order를 뺀 경로보다 유의하게 높음 · 더 작은 불량 조합으로 설명되지 않음</p>
+    <p>FDC 유의차: 불량 조합 wafer와 같은 unit을 지난 나머지 wafer 비교 (기간형 불량은 같은 unit의 이상 기간 전후 비교), 파라미터 수로 보정한 q-value</p>
+    <p>FDC 유의차는 원인 후보이며, 원인 확정은 엔지니어 확인 후 진행합니다.</p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  // ---------- 유틸 ----------
+  function rng(seed) {
+    let a = seed >>> 0, spare = null;
+    const u = () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const normal = () => {
+      if (spare !== null) { const s = spare; spare = null; return s; }
+      let x, y, r;
+      do { x = u() * 2 - 1; y = u() * 2 - 1; r = x * x + y * y; } while (r === 0 || r >= 1);
+      const f = Math.sqrt(-2 * Math.log(r) / r);
+      spare = y * f;
+      return x * f;
+    };
+    return { u, normal };
+  }
+  const R = rng(1013);
+  const sample = (n, mean, sd) => Array.from({ length: n }, () => mean + sd * R.normal());
+  const lin = (d0, d1, r0, r1) => (v) => r0 + ((v - d0) / (d1 - d0)) * (r1 - r0);
+  const logS = (d0, d1, r0, r1) => { const a = Math.log10(d0), b = Math.log10(d1); return (v) => r0 + ((Math.log10(v) - a) / (b - a)) * (r1 - r0); };
+  function ticks(min, max, count) {
+    const span = max - min, raw = span / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= count) || raw;
+    const out = [];
+    for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(+v.toFixed(6));
+    return out;
+  }
+  const dec = (step) => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  const q = (arr, p) => { const s = [...arr].sort((a, b) => a - b), h = (s.length - 1) * p, l = Math.floor(h); return s[l] + (h - l) * ((s[Math.min(l + 1, s.length - 1)]) - s[l]); };
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const svg = (w, h, body) => `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" font-family="inherit">${body}</svg>`;
+  const T = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 11}" text-anchor="${o.anchor || 'start'}" style="fill:${o.fill || 'var(--ink-2)'};font-weight:${o.weight || 400}">${s}</text>`;
+  const L = (x1, y1, x2, y2, st) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="${st}"/>`;
+  function xAxis(sx, y0, y1, tk, fmt, label, W) {
+    let s = '';
+    tk.forEach((v) => { const x = sx(v); s += L(x, y0, x, y1, 'stroke:var(--line)') + T(x, y1 + 16, fmt(v), { anchor: 'middle' }); });
+    if (label) s += T(W / 2, y1 + 34, label, { anchor: 'middle' });
+    return s;
+  }
+  function yAxis(sy, x0, x1, tk, fmt, label) {
+    let s = '';
+    tk.forEach((v) => { const y = sy(v); s += L(x0, y, x1, y, 'stroke:var(--line)') + T(x0 - 8, y + 4, fmt(v), { anchor: 'end' }); });
+    if (label) s += T(x0, 12, label);
+    return s;
+  }
+
+  const MU = 2.08, SD = 0.46, ZK = 4.3;
+
+  // ---------- 1. 좁혀지는 과정 ----------
+  const nar = [[2846, '확인한 order·unit 조합'], [17, '99.8% 범위 이탈'], [6, '조합 수 보정 후 이탈'], [2, '불량 조합']];
+  document.getElementById('narrow').innerHTML = nar.map(([v, t], i) =>
+    `<div class="${i === 3 ? 'last' : ''}"><span class="n">${v.toLocaleString('ko-KR')}</span><span class="bar"><i style="width:${Math.max(3, Math.log10(v + 1) / Math.log10(2847) * 100)}%"></i></span><span class="t">${t}</span></div>`).join('');
+
+  // ---------- 2. Funnel ----------
+  (function () {
+    const W = 1040, H = 380, m = { l: 52, r: 110, t: 24, b: 48 };
+    const sx = logS(15, 1400, m.l, W - m.r), sy = lin(1.2, 3.1, H - m.b, m.t);
+    let pts = '';
+    for (let i = 0; i < 2846; i++) {
+      const n = Math.round(Math.pow(10, 1.3 + R.u() * R.u() * 1.75 + R.u() * 0.2));
+      let z = R.normal(); if (Math.abs(z) > 3.4) z = 3.4 * Math.sign(z) * R.u();
+      const y = MU + z * SD / Math.sqrt(n);
+      pts += `<circle cx="${sx(n).toFixed(1)}" cy="${sy(y).toFixed(1)}" r="2.2" style="fill:var(--dot);opacity:.6"/>`;
+    }
+    const up = [], lo = [];
+    for (let i = 0; i <= 60; i++) { const n = 18 * Math.pow(1300 / 18, i / 60), h = ZK * SD / Math.sqrt(n); up.push([sx(n), sy(MU + h)]); lo.push([sx(n), sy(MU - h)]); }
+    const band = `<polygon points="${up.concat(lo.slice().reverse()).map((p) => p.map((v) => v.toFixed(1)).join(',')).join(' ')}" style="fill:var(--band)"/>` +
+      `<polyline points="${up.map((p) => p.join(',')).join(' ')}" style="fill:none;stroke:var(--band-edge)"/>` +
+      `<polyline points="${lo.map((p) => p.join(',')).join(' ')}" style="fill:none;stroke:var(--band-edge)"/>` +
+      L(sx(18), sy(MU), sx(1300), sy(MU), 'stroke:var(--band-edge);stroke-dasharray:4 4');
+    const rel = [[37, 2.95], [52, 2.62], [410, 2.24], [148, 2.36]].map(([n, y]) => `<circle cx="${sx(n)}" cy="${sy(y)}" r="5" style="fill:none;stroke:var(--bad);stroke-width:1.5"/>`).join('');
+    const bad = [[74, 2.92, 'S11_ETCH · ETC21 → ETC08'], [290, 2.55, 'S16_CVD · CVD15']].map(([n, y, t]) =>
+      `<circle cx="${sx(n)}" cy="${sy(y)}" r="7" style="fill:var(--bad);stroke:var(--surface);stroke-width:2"/>` + T(sx(n) + 11, sy(y) + 4, t, { fill: 'var(--ink)', weight: 600, size: 12 })).join('');
+    const ax = xAxis(sx, m.t, H - m.b, [20, 50, 100, 200, 500, 1000], (v) => v.toLocaleString('ko-KR'), '조합 wafer 수 (로그)', W) +
+      yAxis(sy, m.l, W - m.r, ticks(1.2, 3.1, 6), (v) => v.toFixed(1), '평균 불량률 (%)');
+    document.getElementById('funnel').innerHTML = svg(W, H, ax + band + pts + rel + bad);
+  })();
+
+  // ---------- 공통 차트 ----------
+  function flow(orders) {
+    const colW = 86, gap = 28, boxH = 22, bg = 4, top = 42, maxU = Math.max(...orders.map((o) => o.units.length));
+    const W = orders.length * colW + (orders.length - 1) * gap + 4, H = top + maxU * (boxH + bg) + 4;
+    const maxDev = Math.max(0.05, ...orders.flatMap((o) => o.units.map((u) => u[1] - MU)));
+    let heads = '', boxes = '', sel = '', pts = [];
+    orders.forEach((o, qi) => {
+      const x = 2 + qi * (colW + gap), cx = x + colW / 2, on = o.sel != null;
+      heads += T(cx, 15, `order${qi + 1}`, { anchor: 'middle', weight: on ? 700 : 600, fill: on ? 'var(--bad)' : 'var(--ink-2)', size: 12 }) +
+        T(cx, 30, o.units.length === 1 ? 'unit 1개' : (o.p < 0.05 ? `p ${o.p < 1e-4 ? o.p.toExponential(0) : o.p.toFixed(4)}` : '차이 없음'), { anchor: 'middle', size: 10, fill: 'var(--ink-3)' });
+      o.units.forEach(([name, m], ui) => {
+        const y = top + ui * (boxH + bg), hit = on && o.sel === ui;
+        const t = Math.max(0, Math.min(1, (m - MU) / maxDev));
+        const fill = hit ? 'var(--bad)' : `color-mix(in srgb, var(--bad) ${Math.round(t * 55)}%, var(--fill))`;
+        const g = `<g style="opacity:${on ? 1 : 0.45}"><rect x="${x}" y="${y}" width="${colW}" height="${boxH}" rx="6" style="fill:${fill}"/>` +
+          T(cx, y + 15, name, { anchor: 'middle', fill: hit ? '#fff' : 'var(--ink)', weight: hit ? 700 : 500 }) + '</g>';
+        if (hit) { sel += g; pts.push([cx, y + boxH / 2]); } else boxes += g;
+      });
+    });
+    let path = '';
+    if (pts.length > 1) {
+      let d = `M${pts[0][0]},${pts[0][1]}`;
+      for (let i = 1; i < pts.length; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], dx = (x1 - x0) / 2; d += ` C${x0 + dx},${y0} ${x1 - dx},${y1} ${x1},${y1}`; }
+      path = `<path d="${d}" style="fill:none;stroke:var(--bad);stroke-width:3;stroke-linecap:round;opacity:.85"/>`;
+    }
+    return svg(W, H, heads + path + boxes + sel);
+  }
+
+  function boxes(groups, label) {
+    const W = 520, rowH = 44, m = { l: 150, r: 16, t: 8, b: 40 }, H = m.t + groups.length * rowH + m.b;
+    const all = groups.flatMap((g) => g.v), lo = q(all, 0.005), hi = q(all, 0.995);
+    const tk = ticks(lo, hi, 5), sx = lin(lo, hi, m.l, W - m.r);
+    let s = xAxis(sx, m.t, H - m.b, tk, (v) => v.toFixed(dec(tk[1] - tk[0])), label, W + m.l - 60);
+    s += L(sx(MU), m.t, sx(MU), H - m.b, 'stroke:var(--ink-3);stroke-dasharray:4 4');
+    groups.forEach((g, i) => {
+      const y = m.t + i * rowH + rowH / 2, col = g.red ? 'var(--bad)' : 'var(--ink-2)';
+      const q1 = q(g.v, 0.25), md = q(g.v, 0.5), q3 = q(g.v, 0.75), iqr = q3 - q1;
+      const wl = Math.max(Math.min(...g.v), q1 - 1.5 * iqr), wh = Math.min(Math.max(...g.v), q3 + 1.5 * iqr), mn = mean(g.v);
+      s += T(m.l - 12, y - 2, g.name, { anchor: 'end', fill: 'var(--ink)', size: 12, weight: g.red ? 600 : 400 }) + T(m.l - 12, y + 12, `${g.v.length}장`, { anchor: 'end', size: 10, fill: 'var(--ink-3)' });
+      const step = Math.max(1, Math.ceil(g.v.length / 220));
+      for (let k = 0; k < g.v.length; k += step) {
+        const x = sx(Math.min(hi, Math.max(lo, g.v[k])));
+        s += `<circle cx="${x.toFixed(1)}" cy="${(y + (R.u() - 0.5) * 22).toFixed(1)}" r="1.6" style="fill:${col};opacity:.22"/>`;
+      }
+      s += L(sx(Math.max(lo, wl)), y, sx(Math.min(hi, wh)), y, `stroke:${col};stroke-width:1.2`) +
+        `<rect x="${sx(q1)}" y="${y - 10}" width="${sx(q3) - sx(q1)}" height="20" rx="4" style="fill:${col};fill-opacity:.14;stroke:${col};stroke-width:1.4"/>` +
+        L(sx(md), y - 10, sx(md), y + 10, `stroke:${col};stroke-width:2.5`) +
+        `<path d="M${sx(mn)},${y - 6} l6,6 l-6,6 l-6,-6z" style="fill:${col};stroke:var(--surface);stroke-width:1.2"/>` +
+        T(sx(mn), y - 13, mn.toFixed(2), { anchor: 'middle', fill: 'var(--ink)', weight: 600 });
+    });
+    return svg(W, H, s);
+  }
+
+  function ci(units, sel) {
+    const W = 400, rowH = 26, m = { l: 62, r: 16, t: 6, b: 30 }, H = m.t + units.length * rowH + m.b;
+    const rows = units.map(([name, mn, n]) => [name, mn, 1.96 * SD / Math.sqrt(n)]);
+    const lo = Math.min(MU, ...rows.map((r) => r[1] - r[2])), hi = Math.max(MU, ...rows.map((r) => r[1] + r[2]));
+    const pad = (hi - lo) * 0.08, tk = ticks(lo - pad, hi + pad, 4), sx = lin(lo - pad, hi + pad, m.l, W - m.r);
+    let s = xAxis(sx, m.t, H - m.b, tk, (v) => v.toFixed(2), '', W);
+    s += L(sx(MU), m.t, sx(MU), H - m.b, 'stroke:var(--ink-3);stroke-dasharray:4 4');
+    rows.forEach(([name, mn, h], i) => {
+      const y = m.t + i * rowH + rowH / 2, col = i === sel ? 'var(--bad)' : 'var(--ink-2)';
+      s += T(m.l - 8, y + 4, name, { anchor: 'end', fill: 'var(--ink)', weight: i === sel ? 700 : 400 }) +
+        L(sx(mn - h), y, sx(mn + h), y, `stroke:${col};stroke-width:2;stroke-linecap:round`) +
+        `<circle cx="${sx(mn)}" cy="${y}" r="${i === sel ? 5.5 : 4}" style="fill:${col}"/>`;
+    });
+    return svg(W, H, s);
+  }
+
+  const D0 = Date.parse('2026-09-15'), D1 = Date.parse('2026-10-13'), DAY = 864e5;
+  const fmtD = (t) => { const d = new Date(t); return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`; };
+  function trend(series, opt) {
+    const W = 520, H = 230, m = { l: 48, r: 16, t: 20, b: 40 };
+    const ys = series.flatMap((s) => s.pts.map((p) => p[1]));
+    const tkY = ticks(Math.min(...ys, opt.ref ?? Infinity) - opt.pad, Math.max(...ys) + opt.pad, 4);
+    const sx = lin(D0, D1, m.l, W - m.r), sy = lin(tkY[0], tkY[tkY.length - 1], H - m.b, m.t);
+    const tkX = []; for (let t = D0; t <= D1; t += 7 * DAY) tkX.push(t);
+    let s = xAxis(sx, m.t, H - m.b, tkX, fmtD, '진행 일자', W) + yAxis(sy, m.l, W - m.r, tkY, (v) => v.toFixed(dec(tkY[1] - tkY[0])), opt.yLabel);
+    if (opt.event) s += L(sx(opt.event), m.t, sx(opt.event), H - m.b, 'stroke:var(--bad);stroke-dasharray:3 3') + T(sx(opt.event) + 4, m.t + 10, fmtD(opt.event), { fill: 'var(--bad)', weight: 600 });
+    series.forEach((se) => {
+      if (se.dots) se.pts.forEach(([t, v]) => { s += `<circle cx="${sx(t).toFixed(1)}" cy="${sy(Math.max(tkY[0], Math.min(tkY[tkY.length - 1], v))).toFixed(1)}" r="2" style="fill:${se.color};opacity:.35"/>`; });
+      else s += `<polyline points="${se.pts.map(([t, v]) => `${sx(t).toFixed(1)},${sy(v).toFixed(1)}`).join(' ')}" style="fill:none;stroke:${se.color};stroke-width:${se.width || 2};stroke-linejoin:round"/>`;
+    });
+    return svg(W, H, s);
+  }
+  const roll = (pts, win) => { const out = []; let s = 0; for (let i = 0; i < pts.length; i++) { s += pts[i][1]; if (i >= win) s -= pts[i - win][1]; if (i >= win - 1) out.push([pts[i - Math.floor(win / 2)][0], s / win]); } return out; };
+  const timed = (n, f) => Array.from({ length: n }, (_, i) => { const t = D0 + (i + R.u()) / n * (D1 - D0 - DAY); return [t, f(t)]; });
+
+  // ---------- 3. 불량 조합별 상세 ----------
+  const EVENT = Date.parse('2026-10-01');
+  const combos = [
+    {
+      step: 'S11_ETCH', path: [['order2', 'ETC21'], ['order4', 'ETC08']], delta: '+0.84', n: 74, mean: '2.92', z: '13.1', zk: '4.3',
+      orders: [
+        { units: [['ETC02', 2.07], ['ETC03', 2.09]], p: 0.61 },
+        { units: [['ETC19', 2.07], ['ETC20', 2.05], ['ETC21', 2.29], ['ETC22', 2.06]], p: 3e-5, sel: 2 },
+        { units: [['ETC30', 2.08]] },
+        { units: [['ETC06', 2.05], ['ETC07', 2.07], ['ETC08', 2.33], ['ETC09', 2.04], ['ETC10', 2.06]], p: 1e-6, sel: 2 },
+        { units: [['ETC40', 2.09], ['ETC41', 2.06], ['ETC42', 2.10]], p: 0.44 },
+      ],
+      groups: [
+        { name: '이 경로', v: sample(74, 2.92, 0.5), red: true },
+        { name: 'order2만 다른 unit', v: sample(164, 2.10, 0.46) },
+        { name: 'order4만 다른 unit', v: sample(226, 2.09, 0.46) },
+        { name: '나머지 wafer', v: sample(728, 2.06, 0.46) },
+      ],
+      ci: [
+        ['order2', 'p 3e-5', [['ETC19', 2.07, 290], ['ETC20', 2.05, 300], ['ETC21', 2.29, 310], ['ETC22', 2.06, 292]], 2],
+        ['order4', 'p 1e-6', [['ETC06', 2.05, 236], ['ETC07', 2.07, 240], ['ETC08', 2.33, 238], ['ETC09', 2.04, 241], ['ETC10', 2.06, 237]], 2],
+      ],
+      trend: () => { const me = timed(74, () => 2.92 + 0.5 * R.normal()); const all = timed(1192, () => 2.08 + 0.46 * R.normal());
+        return [{ pts: me, dots: true, color: 'var(--bad)' }, { pts: roll(all, 120), color: 'var(--ink-3)' }, { pts: roll(me, 14), color: 'var(--bad)', width: 2.5 }]; },
+    },
+    {
+      step: 'S16_CVD', path: [['order3', 'CVD15']], delta: '+0.48', n: 290, mean: '2.55', z: '9.8', zk: '4.1', period: '10/01 이후',
+      orders: [
+        { units: [['CVD01', 2.08], ['CVD02', 2.07]], p: 0.72 },
+        { units: [['CVD07', 2.06], ['CVD08', 2.09], ['CVD09', 2.07]], p: 0.58 },
+        { units: [['CVD13', 2.06], ['CVD14', 2.07], ['CVD15', 2.31], ['CVD16', 2.05]], p: 2e-8, sel: 2 },
+      ],
+      groups: [
+        { name: 'CVD15 · 10/01 이후', v: sample(150, 2.55, 0.48), red: true },
+        { name: 'CVD15 · 10/01 이전', v: sample(140, 2.07, 0.46) },
+        { name: 'order3 다른 unit', v: sample(902, 2.06, 0.46) },
+      ],
+      ci: [['order3', 'p 2e-8', [['CVD13', 2.06, 300], ['CVD14', 2.07, 298], ['CVD15', 2.31, 290], ['CVD16', 2.05, 304]], 2]],
+      trend: () => { const me = timed(290, (t) => (t >= EVENT ? 2.55 : 2.07) + 0.47 * R.normal()); const all = timed(1192, () => 2.08 + 0.46 * R.normal());
+        return [{ pts: me, dots: true, color: 'var(--bad)' }, { pts: roll(all, 120), color: 'var(--ink-3)' }, { pts: roll(me, 30), color: 'var(--bad)', width: 2.5 }]; },
+      event: EVENT,
+    },
+  ];
+
+  document.getElementById('combos').innerHTML = combos.map((c, i) => `
+    <div class="card" style="gap:16px">
+      <div class="combo-head">
+        <span class="rank">${i + 1}</span><h3>${c.step}</h3>
+        <span class="chips">${c.path.map(([o, u]) => `<span class="chip"><small>${o}</small>${u}</span>`).join('<span class="arrow">→</span>')}</span>
+        ${c.period ? `<span class="pill gray">${c.period}</span>` : ''}
+        <span class="pill">불량 조합</span>
+      </div>
+      <div class="kv"><span>전체 대비 <b class="red">${c.delta}%p</b></span><span>평균 <b>${c.mean}%</b></span><span>wafer <b>${c.n}장</b></span><span>z <b class="red">${c.z}</b> / 기준 <b>${c.zk}</b></span></div>
+      <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">스텝 흐름 (order × unit)</h4><span class="cap">unit 색 = 평균 불량률 · 빨간 선 = 불량 경로</span></div><div class="chart scroll" id="flow-${i}"></div></div>
+      <div class="grid2">
+        <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">wafer 분포</h4><span class="cap">상자 = 사분위 · ◆ = 평균</span></div><div class="chart" id="box-${i}"></div></div>
+        <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">시간 추이</h4><span class="cap">빨강 = 이 경로 · 회색 = 전체 이동평균</span></div><div class="chart" id="trend-${i}"></div></div>
+      </div>
+      <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">order별 unit 평균</h4><span class="cap">점 = 평균 · 선 = 95% 신뢰구간 · 점선 = 전체 평균</span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+          ${c.ci.map(([o, p], k) => `<div><div class="card-head"><b style="font-size:13px">${o}</b><span class="cap" style="color:var(--accent)">unit 간 ${p}</span></div><div class="chart ci" id="ci-${i}-${k}"></div></div>`).join('')}
+        </div>
+      </div>
+    </div>`).join('');
+
+  combos.forEach((c, i) => {
+    document.getElementById(`flow-${i}`).innerHTML = flow(c.orders);
+    document.getElementById(`box-${i}`).innerHTML = boxes(c.groups, 'wafer 불량률 (%)');
+    document.getElementById(`trend-${i}`).innerHTML = trend(c.trend(), { pad: 0.1, yLabel: '불량률 (%)', event: c.event });
+    c.ci.forEach(([, , units, sel], k) => { document.getElementById(`ci-${i}-${k}`).innerHTML = ci(units, sel); });
+  });
+
+  // ---------- 4. FDC 유의차 ----------
+  const fdc = [
+    {
+      title: 'S11_ETCH · ETC08', cmp: ['ETC21 경유 (이 경로)', 'ETC08 다른 경로'], n: [74, 164],
+      params: [
+        { name: 'Endpoint_Time', unit: 's', a: 51.9, b: 45.5, sd: 1.6, q: 2e-38 },
+        { name: 'RF_Reflected', unit: 'W', a: 14.1, b: 11.3, sd: 1.5, q: 4e-18 },
+        { name: 'Chamber_Pressure', unit: 'mTorr', a: 30.02, b: 29.98, sd: 0.3, q: 0.41 },
+      ],
+      time: (p) => { const A = timed(74, () => p.a + p.sd * R.normal()), B = timed(164, () => p.b + p.sd * R.normal()); return [{ pts: B, dots: true, color: 'var(--ink-3)' }, { pts: A, dots: true, color: 'var(--bad)' }]; },
+    },
+    {
+      title: 'S16_CVD · CVD15', cmp: ['10/01 이후', '10/01 이전'], n: [150, 140],
+      params: [
+        { name: 'Chamber_Pressure', unit: 'Torr', a: 2.126, b: 2.003, sd: 0.03, q: 3e-61 },
+        { name: 'Heater_Temp', unit: '°C', a: 400.5, b: 400.4, sd: 0.8, q: 0.52 },
+        { name: 'Dep_Time', unit: 's', a: 120.8, b: 120.7, sd: 1.2, q: 0.61 },
+      ],
+      time: (p) => [{ pts: timed(290, (t) => (t >= EVENT ? p.a : p.b) + p.sd * R.normal()), dots: true, color: 'var(--bad)' }],
+      event: EVENT,
+    },
+  ];
+
+  function rankBars(params) {
+    const W = 520, rowH = 34, m = { l: 140, r: 90, t: 6, b: 30 }, H = m.t + params.length * rowH + m.b;
+    const ds = params.map((p) => (p.a - p.b) / p.sd), max = Math.ceil(Math.max(...ds.map(Math.abs)));
+    const sx = lin(0, max, m.l, W - m.r);
+    let s = xAxis(sx, m.t, H - m.b, ticks(0, max, 4), (v) => v, '효과 크기 |d| (표준편차 단위)', W + m.l - 80);
+    params.forEach((p, i) => {
+      const y = m.t + i * rowH + rowH / 2, d = Math.abs(ds[i]), sig = p.q < 0.01 && d >= 0.8;
+      const diff = p.a - p.b, dd = Math.abs(diff) < 1 ? 3 : 1;
+      s += T(m.l - 10, y + 4, p.name, { anchor: 'end', fill: 'var(--ink)', weight: sig ? 700 : 400, size: 12 }) +
+        `<rect x="${m.l}" y="${y - 9}" width="${Math.max(2, sx(d) - m.l)}" height="18" rx="4" style="fill:${sig ? 'var(--bad)' : 'var(--dot)'}"/>` +
+        T(sx(d) + 6, y + 4, `${diff >= 0 ? '+' : ''}${diff.toFixed(dd)} ${p.unit}`, { fill: sig ? 'var(--bad)' : 'var(--ink-2)', weight: 600 }) +
+        T(W - 4, y + 4, `q ${p.q < 1e-4 ? p.q.toExponential(0) : p.q.toFixed(2)}`, { anchor: 'end', size: 10, fill: 'var(--ink-3)' });
+    });
+    return svg(W, H, s);
+  }
+
+  function hist2(p, names, n) {
+    const W = 520, H = 220, m = { l: 20, r: 16, t: 20, b: 40 }, bins = 30;
+    const A = sample(n[0], p.a, p.sd), B = sample(n[1], p.b, p.sd);
+    const lo = Math.min(q(A, 0.005), q(B, 0.005)), hi = Math.max(q(A, 0.995), q(B, 0.995)), w = (hi - lo) / bins;
+    const cnt = (arr) => { const c = new Array(bins).fill(0); arr.forEach((v) => { const k = Math.floor((v - lo) / w); if (k >= 0 && k < bins) c[k]++; }); return c.map((x) => x / arr.length); };
+    const ca = cnt(A), cb = cnt(B), top = Math.max(...ca, ...cb);
+    const tk = ticks(lo, hi, 5), sx = lin(lo, hi, m.l, W - m.r), sy = lin(0, top * 1.1, H - m.b, m.t);
+    let s = xAxis(sx, m.t, H - m.b, tk, (v) => v.toFixed(dec(tk[1] - tk[0])), `${p.name} (${p.unit})`, W);
+    [[cb, 'var(--ink-3)', 0.45], [ca, 'var(--bad)', 0.55]].forEach(([c, col, op]) => c.forEach((v, k) => {
+      if (v > 0) s += `<rect x="${sx(lo + k * w) + 0.5}" y="${sy(v)}" width="${Math.max(1, sx(lo + (k + 1) * w) - sx(lo + k * w) - 1)}" height="${sy(0) - sy(v)}" style="fill:${col};opacity:${op}"/>`;
+    }));
+    [[mean(B), 'var(--ink-2)', names[1]], [mean(A), 'var(--bad)', names[0]]].forEach(([v, col, nm], j) => {
+      s += L(sx(v), m.t, sx(v), H - m.b, `stroke:${col};stroke-width:2`) + T(sx(v) + (j ? 6 : -6), m.t + 8 + j * 14, `${nm} ${v.toFixed(p.sd < 0.1 ? 3 : 1)}`, { anchor: j ? 'start' : 'end', fill: col, weight: 600 });
+    });
+    return svg(W, H, s);
+  }
+
+  document.getElementById('fdc').innerHTML = fdc.map((f, i) => `
+    <div class="card" style="gap:16px">
+      <div class="combo-head"><span class="rank">${i + 1}</span><h3>${f.title}</h3>
+        <span class="chips"><span class="chip" style="background:var(--bad-soft);color:var(--bad)">${f.cmp[0]} ${f.n[0]}장</span><span class="arrow">vs</span><span class="chip">${f.cmp[1]} ${f.n[1]}장</span></span>
+      </div>
+      <div class="grid2">
+        <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">파라미터별 유의차 순위</h4><span class="cap">빨강 = 유의 (q &lt; 0.01, |d| ≥ 0.8)</span></div><div class="chart" id="rank-${i}"></div>
+          <table style="margin-top:10px"><thead><tr><th>파라미터</th><th class="r">${f.cmp[0]}</th><th class="r">${f.cmp[1]}</th><th class="r">차이</th><th class="r">q-value</th></tr></thead>
+          <tbody>${f.params.map((p) => { const sig = p.q < 0.01 && Math.abs((p.a - p.b) / p.sd) >= 0.8; const dd = p.sd < 0.1 ? 3 : 1;
+            return `<tr class="${sig ? 'sig' : ''}"><td>${p.name}</td><td class="r">${p.a.toFixed(dd)}</td><td class="r">${p.b.toFixed(dd)}</td><td class="r">${(p.a - p.b >= 0 ? '+' : '') + (p.a - p.b).toFixed(dd)} ${p.unit}</td><td class="r">${p.q < 1e-4 ? p.q.toExponential(0) : p.q.toFixed(2)}</td></tr>`; }).join('')}</tbody></table>
+        </div>
+        <div style="display:grid;gap:14px">
+          <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">${f.params[0].name} 분포</h4><span class="cap">빨강 = ${f.cmp[0]} · 회색 = ${f.cmp[1]}</span></div><div class="chart" id="hist-${i}"></div></div>
+          <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">${f.params[0].name} 시간 추이</h4><span class="cap">wafer별 값</span></div><div class="chart" id="ftrend-${i}"></div></div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  fdc.forEach((f, i) => {
+    const p = f.params[0];
+    document.getElementById(`rank-${i}`).innerHTML = rankBars(f.params);
+    document.getElementById(`hist-${i}`).innerHTML = hist2(p, f.cmp, f.n);
+    document.getElementById(`ftrend-${i}`).innerHTML = trend(f.time(p), { pad: p.sd * 0.5, yLabel: `${p.name} (${p.unit})`, event: f.event });
+  });
+})();
+</script>
+</body>
+</html>
