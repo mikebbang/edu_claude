@@ -1,0 +1,5 @@
+# funnel_check.ipynb (Python 3.12). 확인한 버전: numpy 2.5.3 · pandas 3.0.6 · matplotlib 3.11.2 · ipykernel 7.3.0
+numpy>=2.0
+pandas>=2.2
+matplotlib>=3.9
+ipykernel>=6.29

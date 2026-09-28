@@ -21,6 +21,19 @@ python -m http.server 8765
 | `js/permWorker.js` | 순열(max-T) envelope 계산 Web Worker |
 | `js/app.js` | Funnel 차트, 불량 조합 목록, 상단 설정 |
 | `js/detail.js` | 선택한 조합의 스텝 상세 차트 (흐름도, 분포, 무작위 비교, 유닛 신뢰구간, 히트맵, 시간 추이) |
+| `notebooks/funnel_check.ipynb` | 위 로직과 차트를 Python 3.12로 옮긴 점검 노트북 (JS 대조, 여러 시드, 약점 실험, good/bad 분석 방식 비교) |
+| `notebooks/js_reference.mjs` | 노트북 대조용으로 같은 시드의 JS 분석 결과를 JSON으로 출력 |
+
+## 노트북으로 점검
+
+웹과 같은 로직을 Python 3.12로 옮긴 노트북입니다. 난수까지 같게 옮겨서 같은 시드면 웹과 같은 데이터와 판정이 나오고, 7절에서 JS 결과와 직접 대조합니다(Node.js 필요). 실행 결과가 저장되어 있어 열기만 해도 차트를 볼 수 있습니다.
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -r notebooks/requirements.txt
+```
+
+VS Code나 Jupyter에서 `notebooks/funnel_check.ipynb`를 열고 커널로 `.venv`(Python 3.12)를 고릅니다. 0절의 설정(시드, 최소 웨이퍼 수, 기준 등)만 바꿔서 다시 실행하면 됩니다.
 
 ## 판정 기준
 
