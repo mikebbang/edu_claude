@@ -9,7 +9,6 @@ import { anova, welch, normSf, normInv, bhQ, meanOf, varOf } from './stats.js';
 
 export const Z95 = 1.959964; // 양측 95%
 export const Z998 = 3.090232; // 양측 99.8%
-export const LIFT_ALPHA = 0.001; // 부모 대비 리프트 검정 유의수준(단측)
 export const FWER_ALPHA = 0.05; // 깊이별 다중비교 보정 유의수준
 
 const comboKey = (s, items) => `${s}|` + items.map(([q, u]) => `${q}:${u}`).join('|');
@@ -197,10 +196,10 @@ export function analyze(data, { minN = 20, maxDepth = 3, fullDepth = 2 } = {}) {
     c.children = [];
     // 교호작용 잔차 (k=1은 주효과 = 평균 − μ)
     c.resid = c.k === 1 ? c.mean - mu : c.mean - (mu + c.items.reduce((a, [q, u]) => a + (unitMean(c.step, q, u) - mu), 0));
-    // 부모 대비 리프트: 조합 vs (부모 − 조합) Welch t, 단측
+    // 부모 대비 리프트: 조합 vs (부모 − 조합) Welch t, 단측. 판정에는 부모 중 가장 작은 t를 쓴다
     c.parents = [];
     if (c.k >= 2) {
-      let liftP = 0, liftMin = Infinity;
+      let liftP = 0, liftT = Infinity, liftMin = Infinity;
       for (let drop = 0; drop < c.k; drop++) {
         const pItems = c.items.filter((_, i) => i !== drop);
         const P = statsOf(c.step, pItems);
@@ -209,9 +208,11 @@ export function analyze(data, { minN = 20, maxDepth = 3, fullDepth = 2 } = {}) {
         const restMean = rest.n ? rest.sum / rest.n : NaN;
         c.parents.push({ key: comboKey(c.step, pItems), items: pItems, n: P.n, mean: P.sum / P.n, restN: rest.n, restMean, t: w.t, p: w.p });
         liftP = Math.max(liftP, w.p);
+        liftT = Math.min(liftT, w.t);
         liftMin = Math.min(liftMin, c.mean - restMean);
       }
       c.liftP = liftP;
+      c.liftT = liftT;
       c.lift = liftMin;
     }
   }
@@ -258,6 +259,8 @@ export function thresholds(res, method, permZ) {
 }
 
 // 상태 판정: normal / warn / bad / inherited(상속) / explained(하위 기인)
+// 오더 2개 이상 조합은 오더 하나를 뺀 모든 부모의 나머지 웨이퍼와 비교해도 같은 기준(z)을 넘어야 불량이다.
+// 기준을 넘은 조합은 평균이 높게 뽑힌 쪽이라, 고정 유의수준(p < 0.001)으로는 진짜 불량의 효과를 물려받은 조합이 자주 통과한다.
 export function classify(res, zk) {
   const { combos, mu, sd } = res;
   for (const c of combos) {
@@ -265,7 +268,7 @@ export function classify(res, zk) {
     c.explainedBy = null;
     if (!c.over) c.status = c.z > Z95 ? 'warn' : 'normal';
     else if (c.k === 1) c.status = 'bad';
-    else c.status = c.liftP < LIFT_ALPHA ? 'bad' : 'inherited';
+    else c.status = c.liftT > zk[c.k] ? 'bad' : 'inherited';
   }
   // 이탈의 원인이 하위(더 깊은) 조합에 있으면: 그 조합을 뺀 나머지가 envelope 안이면 "하위 기인"
   for (let k = res.maxDepth - 1; k >= 1; k--) {

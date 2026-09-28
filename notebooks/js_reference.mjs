@@ -35,5 +35,5 @@ process.stdout.write(JSON.stringify({
   mu: res.mu, sd: res.sd, kappa: res.kappa, kappaRaw: res.kappaRaw,
   searchSpace: res.searchSpace, depthCount: res.depthCount, rawOver: res.rawOver,
   permZ: pz, envs,
-  combos: res.combos.map((c) => [c.key, c.n, c.z, c.liftP ?? null, c.q, c.shrunk, c.resid]),
+  combos: res.combos.map((c) => [c.key, c.n, c.z, c.liftP ?? null, c.liftT ?? null, c.q, c.shrunk, c.resid]),
 }));

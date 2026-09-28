@@ -2,7 +2,7 @@
 
 import { MISSING } from './mock.js';
 import { makeRng } from './rng.js';
-import { Z998, LIFT_ALPHA } from './analysis.js';
+import { Z998 } from './analysis.js';
 
 const fmt = (x, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : '–');
 const fmtInt = (x) => x.toLocaleString('ko-KR');
@@ -167,11 +167,11 @@ function flowSvg(data, res, c) {
       ${heads}${d ? `<path d="${d}" class="route"/>` : ''}${boxes}${chosen}</svg></div>`;
 }
 
-function badges(c) {
+function badges(c, thr) {
   const list = [
     [c.z > Z998, '99.8% 범위 밖'],
     [c.over, '보정 기준 밖'],
-    c.k >= 2 ? [c.liftP < LIFT_ALPHA, '오더 하나 뺀 경로보다 높음'] : [true, '단일 유닛'],
+    c.k >= 2 ? [c.liftT > thr, '오더 하나 뺀 경로보다 높음'] : [true, '단일 유닛'],
     [c.status !== 'explained', '최소 원인 단위'],
   ];
   return `<div class="badges">${list.map(([ok, t]) => `<span class="bdg ${ok ? 'ok' : 'no'}">${ok ? ICON_OK : ICON_NO}${t}</span>`).join('')}</div>`;
@@ -226,7 +226,7 @@ export function renderDetail(el, { data, res, zk, c, C, statusLabel }) {
         <div><b>${fmtInt(c.n)}<small>장</small></b><span>웨이퍼</span></div>
         <div><b class="${c.over ? 'up' : ''}">${fmt(c.z, 1)}<small>/ ${fmt(thr, 1)}</small></b><span>z / 보정 기준</span></div>
       </div>
-      ${badges(c)}
+      ${badges(c, thr)}
     </div>
 
     <div class="card pane">
