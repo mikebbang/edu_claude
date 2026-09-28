@@ -152,7 +152,7 @@
     <div class="grid4">
       <div class="tile"><b>1,200<small>장</small></b><span>입력 wafer</span></div>
       <div class="tile"><b>99.3<small>%</small></b><span>설비 이력 매칭 (1,192장)</span></div>
-      <div class="tile"><b>2.08<small>%</small></b><span>전체 평균 불량률</span></div>
+      <div class="tile"><b>15.1<small>%</small></b><span>전체 bad 비율 (평균 불량률 2.08%)</span></div>
       <div class="tile red"><b>2<small>건</small></b><span>불량 조합</span></div>
     </div>
     <div class="card">
@@ -165,7 +165,7 @@
   <section>
     <div class="sec-title"><span class="no">2</span><h2>조합 funnel</h2></div>
     <div class="card">
-      <div class="card-head"><h3>조합 wafer 수 대비 평균 불량률</h3><span class="cap">띠 = 우연히 나올 수 있는 범위 (조합 수 보정)</span></div>
+      <div class="card-head"><h3>조합 wafer 수 대비 bad 비율</h3><span class="cap">띠 = 우연히 나올 수 있는 범위 (조합 수 보정)</span></div>
       <div class="chart" id="funnel"></div>
       <div class="legend">
         <span><i style="background:var(--bad);border-radius:50%"></i>불량 조합</span>
@@ -284,7 +284,7 @@
     return s;
   }
 
-  const MU = 2.08, SD = 0.46, ZK = 4.3;
+  const MU = 2.08, SD = 0.46, ZK = 4.3, P = 0.151; // P = 전체 bad 비율
 
   // ---------- 1. 좁혀지는 과정 ----------
   const nar = [[2846, '확인한 order·unit 조합'], [17, '99.8% 범위 이탈'], [6, '조합 수 보정 후 이탈'], [2, '불량 조합']];
@@ -294,25 +294,25 @@
   // ---------- 2. Funnel ----------
   (function () {
     const W = 1040, H = 380, m = { l: 52, r: 110, t: 24, b: 48 };
-    const sx = logS(15, 1400, m.l, W - m.r), sy = lin(1.2, 3.1, H - m.b, m.t);
+    const sx = logS(15, 1400, m.l, W - m.r), sy = lin(0, 1, H - m.b, m.t);
     let pts = '';
     for (let i = 0; i < 2846; i++) {
       const n = Math.round(Math.pow(10, 1.3 + R.u() * R.u() * 1.75 + R.u() * 0.2));
       let z = R.normal(); if (Math.abs(z) > 3.4) z = 3.4 * Math.sign(z) * R.u();
-      const y = MU + z * SD / Math.sqrt(n);
+      const y = Math.max(0, P + z * Math.sqrt(P * (1 - P) / n));
       pts += `<circle cx="${sx(n).toFixed(1)}" cy="${sy(y).toFixed(1)}" r="2.2" style="fill:var(--dot);opacity:.6"/>`;
     }
     const up = [], lo = [];
-    for (let i = 0; i <= 60; i++) { const n = 18 * Math.pow(1300 / 18, i / 60), h = ZK * SD / Math.sqrt(n); up.push([sx(n), sy(MU + h)]); lo.push([sx(n), sy(MU - h)]); }
+    for (let i = 0; i <= 60; i++) { const n = 18 * Math.pow(1300 / 18, i / 60), h = ZK * Math.sqrt(P * (1 - P) / n); up.push([sx(n), sy(Math.min(1, P + h))]); lo.push([sx(n), sy(Math.max(0, P - h))]); }
     const band = `<polygon points="${up.concat(lo.slice().reverse()).map((p) => p.map((v) => v.toFixed(1)).join(',')).join(' ')}" style="fill:var(--band)"/>` +
       `<polyline points="${up.map((p) => p.join(',')).join(' ')}" style="fill:none;stroke:var(--band-edge)"/>` +
       `<polyline points="${lo.map((p) => p.join(',')).join(' ')}" style="fill:none;stroke:var(--band-edge)"/>` +
-      L(sx(18), sy(MU), sx(1300), sy(MU), 'stroke:var(--band-edge);stroke-dasharray:4 4');
-    const rel = [[37, 2.95], [52, 2.62], [410, 2.24], [148, 2.36]].map(([n, y]) => `<circle cx="${sx(n)}" cy="${sy(y)}" r="5" style="fill:none;stroke:var(--bad);stroke-width:1.5"/>`).join('');
-    const bad = [[74, 2.92, 'S11_ETCH · ETC21 → ETC08'], [290, 2.55, 'S16_CVD · CVD15']].map(([n, y, t]) =>
+      L(sx(18), sy(P), sx(1300), sy(P), 'stroke:var(--band-edge);stroke-dasharray:4 4');
+    const rel = [[37, 0.62], [52, 0.45], [410, 0.24], [148, 0.33]].map(([n, y]) => `<circle cx="${sx(n)}" cy="${sy(y)}" r="5" style="fill:none;stroke:var(--bad);stroke-width:1.5"/>`).join('');
+    const bad = [[74, 0.78, 'S11_ETCH · ETC21 → ETC08'], [290, 0.36, 'S16_CVD · CVD15']].map(([n, y, t]) =>
       `<circle cx="${sx(n)}" cy="${sy(y)}" r="7" style="fill:var(--bad);stroke:var(--surface);stroke-width:2"/>` + T(sx(n) + 11, sy(y) + 4, t, { fill: 'var(--ink)', weight: 600, size: 12 })).join('');
     const ax = xAxis(sx, m.t, H - m.b, [20, 50, 100, 200, 500, 1000], (v) => v.toLocaleString('ko-KR'), '조합 wafer 수 (로그)', W) +
-      yAxis(sy, m.l, W - m.r, ticks(1.2, 3.1, 6), (v) => v.toFixed(1), '평균 불량률 (%)');
+      yAxis(sy, m.l, W - m.r, ticks(0, 1, 5), (v) => v.toFixed(1), 'bad 비율');
     document.getElementById('funnel').innerHTML = svg(W, H, ax + band + pts + rel + bad);
   })();
 
@@ -408,7 +408,7 @@
   const EVENT = Date.parse('2026-10-01');
   const combos = [
     {
-      step: 'S11_ETCH', path: [['order2', 'ETC21'], ['order4', 'ETC08']], delta: '+0.84', n: 74, mean: '2.92', z: '13.1', zk: '4.3',
+      step: 'S11_ETCH', path: [['order2', 'ETC21'], ['order4', 'ETC08']], delta: '+0.84', bad: '0.78', n: 74, mean: '2.92', z: '13.1', zk: '4.3',
       orders: [
         { units: [['ETC02', 2.07], ['ETC03', 2.09]], p: 0.61 },
         { units: [['ETC19', 2.07], ['ETC20', 2.05], ['ETC21', 2.29], ['ETC22', 2.06]], p: 3e-5, sel: 2 },
@@ -430,7 +430,7 @@
         return [{ pts: me, dots: true, color: 'var(--bad)' }, { pts: roll(all, 120), color: 'var(--ink-3)' }, { pts: roll(me, 14), color: 'var(--bad)', width: 2.5 }]; },
     },
     {
-      step: 'S16_CVD', path: [['order3', 'CVD15']], delta: '+0.48', n: 290, mean: '2.55', z: '9.8', zk: '4.1', period: '10/01 이후',
+      step: 'S16_CVD', path: [['order3', 'CVD15']], delta: '+0.48', bad: '0.36', n: 290, mean: '2.55', z: '9.8', zk: '4.1', period: '10/01 이후',
       orders: [
         { units: [['CVD01', 2.08], ['CVD02', 2.07]], p: 0.72 },
         { units: [['CVD07', 2.06], ['CVD08', 2.09], ['CVD09', 2.07]], p: 0.58 },
@@ -456,7 +456,7 @@
         ${c.period ? `<span class="pill gray">${c.period}</span>` : ''}
         <span class="pill">불량 조합</span>
       </div>
-      <div class="kv"><span>전체 대비 <b class="red">${c.delta}%p</b></span><span>평균 <b>${c.mean}%</b></span><span>wafer <b>${c.n}장</b></span><span>z <b class="red">${c.z}</b> / 기준 <b>${c.zk}</b></span></div>
+      <div class="kv"><span>bad 비율 <b class="red">${c.bad}</b> (전체 0.151)</span><span>평균 불량률 <b>${c.mean}%</b> (${c.delta}%p)</span><span>wafer <b>${c.n}장</b></span><span>z <b class="red">${c.z}</b> / 기준 <b>${c.zk}</b></span></div>
       <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">스텝 흐름 (order × unit)</h4><span class="cap">unit 색 = 평균 불량률 · 빨간 선 = 불량 경로</span></div><div class="chart scroll" id="flow-${i}"></div></div>
       <div class="grid2">
         <div><div class="card-head" style="margin-bottom:6px"><h4 style="font-size:13px">wafer 분포</h4><span class="cap">상자 = 사분위 · ◆ = 평균</span></div><div class="chart" id="box-${i}"></div></div>

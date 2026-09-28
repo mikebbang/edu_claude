@@ -76,6 +76,21 @@ const idx = new Map(wafers.map((w, i) => [w.key, i]));
 const Y = Float64Array.from(wafers, (w) => w.bad);
 const V = Float64Array.from(wafers, (w) => w.value);
 
+// 입력 점검: 비교가 성립하지 않으면 멈추고 사람에게 확인을 요청한다 (종료 코드 2)
+const warnings = [];
+if (input.invalid.length) warnings.push(`형식 오류로 제외한 줄 ${input.invalid.length}개 (예: ${input.invalid[0].line}번째 줄 · ${input.invalid[0].reason})`);
+if (input.duplicates) warnings.push(`중복으로 제외한 wafer ${input.duplicates}개`);
+if (unmatched) warnings.push(`설비 이력이 없어 제외한 wafer ${unmatched}개`);
+const nBad = wafers.reduce((a, w) => a + w.bad, 0);
+function stop(msg) {
+  console.error(`[입력 확인 필요] ${msg}`);
+  warnings.forEach((w) => console.error(`  - ${w}`));
+  process.exit(2);
+}
+if (!input.rows.length) stop('유효한 입력이 없습니다. lot, wafer, value, good/bad 네 열을 붙여넣었는지 확인하세요.');
+if (!N) stop('설비 이력과 매칭된 wafer가 없습니다. lot·wafer 표기를 확인하세요.');
+if (nBad === 0 || nBad === N) stop(`good/bad가 한쪽뿐입니다 (bad ${nBad}장 / good ${N - nBad}장). 비교하려면 둘 다 있어야 합니다.`);
+
 const ordNum = (o) => +(o.match(/\d+/) || [0])[0];
 const stepMap = new Map();
 for (const [key, step, order, unit, t] of hist) {
@@ -277,7 +292,7 @@ const analysis = {
   generatedAt: new Date().toISOString(),
   router: badCombos.length ? 'fdc' : 'report_only',
   input: {
-    lines: input.lines, valid: input.rows.length, invalid: input.invalid, duplicates: input.duplicates,
+    lines: input.lines, valid: input.rows.length, invalid: input.invalid, duplicates: input.duplicates, warnings,
     matched: N, unmatched, matchRate: r3(N / Math.max(1, input.rows.length)),
     bad: Math.round(res.mu * N), good: N - Math.round(res.mu * N),
     overallBadRate: r3(res.mu), overallMeanValue: r3(meanV([...Array(N).keys()])),
@@ -293,11 +308,15 @@ const analysis = {
   badCombos: details,
 };
 mkdirSync(OUT, { recursive: true });
-writeFileSync(join(OUT, 'analysis.json'), JSON.stringify(analysis));
+// 사람과 Agent가 끝까지 읽을 수 있게 줄바꿈해서 저장 (funnel 점은 한 줄에 하나)
+const pretty = JSON.stringify({ ...analysis, funnel: '__FUNNEL__' }, null, 2)
+  .replace('"__FUNNEL__"', '[\n' + funnel.map((r) => '    ' + JSON.stringify(r)).join(',\n') + '\n  ]');
+writeFileSync(join(OUT, 'analysis.json'), pretty);
 
 // ---------- 콘솔 요약 ----------
 const pct = (x) => (x * 100).toFixed(1) + '%';
 console.log(`[Task 2] 입력 ${input.lines}줄 → 유효 ${input.rows.length} (형식 오류 ${input.invalid.length}, 중복 ${input.duplicates}) · 이력 매칭 ${N} (${pct(N / Math.max(1, input.rows.length))}) · bad ${analysis.input.bad} / good ${analysis.input.good}`);
+warnings.forEach((w) => console.log(`         주의: ${w}`));
 console.log(`[Task 3] 조합 ${res.combos.length} → 99.8% 이탈 ${res.rawOver} → 보정 후 이탈 ${summary.over} → 불량 조합 ${summary.bad} (관련 ${summary.inherited + summary.explained})`);
 for (const d of details) console.log(`   ${d.id} ${d.step} ${d.path.map((p) => `${p.order}:${p.unit}`).join(' → ')} · n ${d.n} · bad ${pct(d.badRate)} (전체 ${pct(d.overallBadRate)}) · z ${d.z}`);
 console.log(`[Router] ${analysis.router === 'fdc' ? '불량 조합 1건 이상 → FDC 유의차 → 해석' : '불량 조합 0건 → 보고서 작성으로'}`);

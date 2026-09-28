@@ -7,7 +7,7 @@
 | 1 | lot·wafer·value 붙여넣기와 good/bad 구분 입력 | 사람 | - |
 | 2 | 입력값 정리(형식 확인, 중복·결측 제거)와 설비 진행 이력 조회·lot·wafer 기준 결합 | 코드 | - |
 | 3 | 스텝별 order·unit 조합 생성과 bad wafer가 유의하게 몰린 불량 조합 판정 | 코드 | Router 분기 지점 |
-| 4 | 불량 조합 unit의 FDC 데이터 조회와 파라미터별 유의차 계산(bad 경로 wafer vs 같은 unit의 나머지 wafer) | 코드 | - |
+| 4 | 불량 조합 unit의 FDC 데이터 조회와 파라미터별 유의차 계산(order 2개 이상 조합: 불량 경로 wafer vs 같은 unit의 나머지 wafer / unit 1개 조합: 같은 unit의 bad vs good wafer) | 코드 | - |
 | 5 | 유의차가 큰 FDC 파라미터의 의미 해석과 원인 가설 도출 | AI | Parallel ③ |
 | 6 | 차트와 원인 가설·확인 항목을 정리한 분석 보고서 작성 | AI | Gen / Eval (Generator) |
 | 6-1 | 분석 보고서 검토 (PASS / FAIL 판정) | AI | Gen / Eval (Evaluator) |
