@@ -3,7 +3,6 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 
-# 분석 결과(랭킹 CSV 등)는 커밋하지 않는다. raw.csv는 가상 demo라서 예외
-# (서버에서 실제 데이터로 덮어쓴 뒤에는 git update-index --skip-worktree raw.csv 로 변경을 무시하게 한다)
+# 실제 데이터(raw.csv)와 분석 결과(랭킹 CSV 등)는 커밋하지 않는다. 가상 demo만 예외
 *.csv
-!/raw.csv
+!/demo_raw.csv

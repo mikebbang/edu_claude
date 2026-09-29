@@ -25,7 +25,7 @@ python -m http.server 8765
 | `notebooks/js_reference.mjs` | 노트북 대조용으로 같은 시드의 JS 분석 결과를 JSON으로 출력 |
 | `notebooks/real_data_funnel.ipynb` | 실제 설비 이력 CSV(`raw.csv`)에 같은 판정을 적용해 대표 불량 대상 랭킹과 차트를 보는 노트북 |
 | `notebooks/fonts/` | 노트북 차트용 한글 글꼴(나눔고딕, SIL Open Font License 1.1 · `OFL.txt`) |
-| `raw.csv` | 실제 데이터 노트북용 가상 demo 데이터. 실제 데이터로 덮어써서 사용 |
+| `demo_raw.csv` | 실제 데이터 노트북용 가상 demo 데이터. demo로 실행하려면 `raw.csv`로 복사 |
 
 ## 노트북으로 점검
 
@@ -40,13 +40,10 @@ VS Code나 Jupyter에서 `notebooks/funnel_check.ipynb`를 열고 커널로 `.ve
 
 ## 실제 데이터 분석
 
-`notebooks/real_data_funnel.ipynb`는 저장소 최상위(`unit_combi` 폴더)의 `raw.csv` 하나만 읽어 같은 판정을 돌립니다. 저장소의 `raw.csv`는 가상 demo(스텝 20개, 웨이퍼 1,000장, 불량 2개)이므로 실제 데이터로 덮어쓰고 위에서부터 실행하면 됩니다.
+`notebooks/real_data_funnel.ipynb`는 저장소 최상위(`unit_combi` 폴더)의 `raw.csv` 하나만 읽어 같은 판정을 돌립니다. 실제 데이터를 `raw.csv`라는 이름으로 두고 위에서부터 실행하면 됩니다.
 
-서버에서 실제 데이터로 덮어쓴 뒤에는 아래 명령을 한 번 실행해 두세요. git이 `raw.csv` 변경을 무시해서 실제 데이터가 커밋되지 않습니다.
-
-```bash
-git update-index --skip-worktree raw.csv
-```
+- 저장소에는 가상 demo 데이터 `demo_raw.csv`(스텝 20개, 웨이퍼 1,000장, 불량 2개)만 있습니다. demo로 확인하려면 `raw.csv`로 복사해서 실행합니다.
+- `raw.csv`는 저장소에 없고 `.gitignore`로도 빠지므로, 새 버전을 ZIP으로 받아 덮어 풀어도 실제 데이터가 바뀌지 않고 커밋될 일도 없습니다.
 
 - 필요한 컬럼: `analysis_date, job_id, root_lot_id, lot_id, wafer_id, tkin_time, line_id, part_id, step_seq, step_desc, eqp_id, chamber_id, ppid, y_value, good_bad, step_ord`
 - 웨이퍼 = `root_lot_id` + `wafer_id`, 스텝 = `step_seq`(여러 part를 함께 분석), 오더 = `step_ord`, 유닛 = `eqp_id-chamber_id`
