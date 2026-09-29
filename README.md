@@ -42,12 +42,14 @@ VS Code나 Jupyter에서 `notebooks/funnel_check.ipynb`를 열고 커널로 `.ve
 
 `notebooks/real_data_funnel.ipynb`는 저장소 최상위(`unit_combi` 폴더)의 `raw.csv` 하나만 읽어 같은 판정을 돌립니다. 실제 데이터를 `raw.csv`라는 이름으로 두고 위에서부터 실행하면 됩니다.
 
-- 저장소에는 가상 demo 데이터 `demo_raw.csv`(스텝 20개, 웨이퍼 1,000장, 불량 2개)만 있습니다. demo로 확인하려면 `raw.csv`로 복사해서 실행합니다.
+- 저장소에는 가상 demo 데이터 `demo_raw.csv`(스텝 20개, 웨이퍼 1,000장, 불량 2개, `step_seq`는 `ex100100_1`처럼 스텝 번호 + `_오더`)만 있습니다. demo로 확인하려면 `raw.csv`로 복사해서 실행합니다.
 - `raw.csv`는 저장소에 없고 `.gitignore`로도 빠지므로, 새 버전을 ZIP으로 받아 덮어 풀어도 실제 데이터가 바뀌지 않고 커밋될 일도 없습니다.
 
 - 필요한 컬럼: `analysis_date, job_id, root_lot_id, lot_id, wafer_id, tkin_time, line_id, part_id, step_seq, step_desc, eqp_id, chamber_id, ppid, y_value, good_bad, step_ord`
-- 웨이퍼 = `root_lot_id` + `wafer_id`, 스텝 = `step_seq`(여러 part를 함께 분석), 오더 = `step_ord`, 유닛 = `eqp_id-chamber_id`
-- part별 `y_value` 수준 차이와 랏 구조(랏 단위 배정 · 랏 간 편차)는 자동으로 점검하고, 필요하면 보정합니다.
+- 웨이퍼 = `root_lot_id` + `wafer_id`, 유닛 = `eqp_id-chamber_id`
+- 스텝 = `step_seq`에서 끝의 `_번호`를 뗀 값, 오더 = 그 번호. 예: `ex100000_1` ~ `ex100000_6` → 스텝 `ex100000` 안의 오더 1~6. 끝 번호가 없는 `step_seq`는 그대로 스텝으로 보고 `step_ord`를 오더로 씁니다. 여러 part를 함께 분석합니다.
+- `y_value` 분포 모양(한쪽으로 길게 치우치면 순위 점수로 분석), part별 수준 차이, 랏 구조(랏 단위 배정 · 랏 간 편차)를 자동으로 점검하고, 필요하면 보정합니다.
+- 웨이퍼가 거의 같은 대표 대상(예: 하위 스텝 여러 개를 같은 챔버에서 진행)은 데이터로 구분할 수 없어 랭킹에서 한 줄로 묶습니다.
 - 한글 글꼴은 `notebooks/fonts`의 나눔고딕을 자동으로 씁니다. 노트북을 다른 곳으로 옮길 때는 이 폴더도 노트북 옆에 함께 두세요.
 
 ## 판정 기준
