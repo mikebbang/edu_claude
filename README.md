@@ -23,6 +23,9 @@ python -m http.server 8765
 | `js/detail.js` | 선택한 조합의 스텝 상세 차트 (흐름도, 분포, 무작위 비교, 유닛 신뢰구간, 히트맵, 시간 추이) |
 | `notebooks/funnel_check.ipynb` | 위 로직과 차트를 Python 3.12로 옮긴 점검 노트북 (JS 대조, 여러 시드, 약점 실험, good/bad 분석 방식 비교) |
 | `notebooks/js_reference.mjs` | 노트북 대조용으로 같은 시드의 JS 분석 결과를 JSON으로 출력 |
+| `notebooks/real_data_funnel.ipynb` | 실제 설비 이력 CSV(`raw.csv`)에 같은 판정을 적용해 대표 불량 대상 랭킹과 차트를 보는 노트북 |
+| `notebooks/fonts/` | 노트북 차트용 한글 글꼴(나눔고딕, SIL Open Font License 1.1 · `OFL.txt`) |
+| `raw.csv` | 실제 데이터 노트북용 가상 demo 데이터. 실제 데이터로 덮어써서 사용 |
 
 ## 노트북으로 점검
 
@@ -34,6 +37,21 @@ python3.12 -m venv .venv
 ```
 
 VS Code나 Jupyter에서 `notebooks/funnel_check.ipynb`를 열고 커널로 `.venv`(Python 3.12)를 고릅니다. 0절의 설정(시드, 최소 웨이퍼 수, 기준 등)만 바꿔서 다시 실행하면 됩니다.
+
+## 실제 데이터 분석
+
+`notebooks/real_data_funnel.ipynb`는 저장소 최상위(`unit_combi` 폴더)의 `raw.csv` 하나만 읽어 같은 판정을 돌립니다. 저장소의 `raw.csv`는 가상 demo(스텝 20개, 웨이퍼 1,000장, 불량 2개)이므로 실제 데이터로 덮어쓰고 위에서부터 실행하면 됩니다.
+
+서버에서 실제 데이터로 덮어쓴 뒤에는 아래 명령을 한 번 실행해 두세요. git이 `raw.csv` 변경을 무시해서 실제 데이터가 커밋되지 않습니다.
+
+```bash
+git update-index --skip-worktree raw.csv
+```
+
+- 필요한 컬럼: `analysis_date, job_id, root_lot_id, lot_id, wafer_id, tkin_time, line_id, part_id, step_seq, step_desc, eqp_id, chamber_id, ppid, y_value, good_bad, step_ord`
+- 웨이퍼 = `root_lot_id` + `wafer_id`, 스텝 = `step_seq`(여러 part를 함께 분석), 오더 = `step_ord`, 유닛 = `eqp_id-chamber_id`
+- part별 `y_value` 수준 차이와 랏 구조(랏 단위 배정 · 랏 간 편차)는 자동으로 점검하고, 필요하면 보정합니다.
+- 한글 글꼴은 `notebooks/fonts`의 나눔고딕을 자동으로 씁니다. 노트북을 다른 곳으로 옮길 때는 이 폴더도 노트북 옆에 함께 두세요.
 
 ## 판정 기준
 
