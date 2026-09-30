@@ -42,10 +42,11 @@ VS Code나 Jupyter에서 `notebooks/funnel_check.ipynb`를 열고 커널로 `.ve
 
 `notebooks/real_data_funnel.ipynb`는 저장소 최상위(`unit_combi` 폴더)의 `raw.csv` 하나만 읽어 같은 판정을 돌립니다. 실제 데이터를 `raw.csv`라는 이름으로 두고 위에서부터 실행하면 됩니다. 결과는 한 장 funnel → 혐의 대상 표(초과 bad · 확실도) → 1위 자세히 → 경계선 비교 순서로 나오고, 데이터 점검 · 계산값 · 판정 방식 설명은 노트북 맨 아래 부록에 있습니다.
 
-- 저장소에는 가상 demo 데이터 `demo_raw.csv`(STEP 20개, 웨이퍼 1,000장, 불량 2개, `step_seq`는 `ex100100_1`처럼 STEP 번호 + `_Order 번호`)만 있습니다. demo로 확인하려면 `raw.csv`로 복사해서 실행합니다.
+- 저장소에는 가상 demo 데이터 `demo_raw.csv`(STEP 20개, 웨이퍼 1,000장 중 good_bad N 30장, 불량 2개, `step_seq`는 `ex100100_1`처럼 STEP 번호 + `_Order 번호`)만 있습니다. demo로 확인하려면 `raw.csv`로 복사해서 실행합니다.
 - `raw.csv`는 저장소에 없고 `.gitignore`로도 빠지므로, 새 버전을 ZIP으로 받아 덮어 풀어도 실제 데이터가 바뀌지 않고 커밋될 일도 없습니다.
 
-- 필요한 컬럼: `analysis_date, job_id, root_lot_id, lot_id, wafer_id, tkin_time, line_id, part_id, step_seq, step_desc, eqp_id, chamber_id, ppid, y_value, good_bad, step_ord`
+- 필요한 컬럼: `analysis_date, job_id, root_lot_id, lot_id, wafer_id, tkin_time, line_id, part_id, step_seq, step_desc, eqp_id, chamber_id, ppid, y_value, good_bad, step_ord` (`raw.csv` 하나에 job 하나. `analysis_date, job_id, lot_id, ppid`는 읽지 않음)
+- `y_value`는 모든 웨이퍼에 있어야 합니다. `good_bad`는 `G` · `B` · `N`이고, N인 웨이퍼는 계산에서 빼고 차트(4절 Value 분포의 빈 원, 부록 A)에만 표시합니다.
 - 웨이퍼 = `root_lot_id` + `wafer_id`, 유닛 = `eqp_id-chamber_id`, Value = `y_value`
 - STEP = `step_seq`에서 끝의 `_번호`를 뗀 값, Order = 그 번호. 예: `ex100000_1` ~ `ex100000_6` → STEP `ex100000` 안의 Order 1~6. 끝 번호가 없는 `step_seq`는 그대로 STEP으로 보고 `step_ord`를 Order로 씁니다. 여러 part를 함께 분석합니다.
 - Value 분포 모양(한쪽으로 길게 치우치면 순위 점수로 분석)과 part별 수준 차이를 자동으로 점검하고, 필요하면 보정합니다.
