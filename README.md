@@ -26,6 +26,7 @@ python -m http.server 8765
 | `notebooks/real_data_funnel.ipynb` | 실제 설비 이력 CSV(`raw.csv`)에 같은 판정을 적용해 대표 불량 대상 랭킹과 차트를 보는 노트북 |
 | `notebooks/fonts/` | 노트북 차트용 한글 글꼴(나눔고딕, SIL Open Font License 1.1 · `OFL.txt`) |
 | `demo_raw.csv` | 실제 데이터 노트북용 가상 demo 데이터. demo로 실행하려면 `raw.csv`로 복사 |
+| `docs/sqrt2lnM_envelope.pdf` | 실제 데이터 노트북 6절의 √(2 ln M_N) 경계선 구현을 수식으로 정리한 문서 |
 
 ## 노트북으로 점검
 
