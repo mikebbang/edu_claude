@@ -40,7 +40,7 @@ VS Code나 Jupyter에서 `notebooks/funnel_check.ipynb`를 열고 커널로 `.ve
 
 ## 실제 데이터 분석
 
-`notebooks/real_data_funnel.ipynb`는 저장소 최상위(`unit_combi` 폴더)의 `raw.csv` 하나만 읽어 같은 판정을 돌립니다. 실제 데이터를 `raw.csv`라는 이름으로 두고 위에서부터 실행하면 됩니다. 결과는 한 장 funnel → 혐의 대상 표(초과 bad · 확실도) → 1위 자세히 → 경계선 비교 순서로 나오고, 데이터 점검 · 계산값 · 판정 방식 설명은 노트북 맨 아래 부록에 있습니다.
+`notebooks/real_data_funnel.ipynb`는 저장소 최상위(`unit_combi` 폴더)의 `raw.csv` 하나만 읽어 같은 판정을 돌립니다. 실제 데이터를 `raw.csv`라는 이름으로 두고 위에서부터 실행하면 됩니다. 결과는 한 장 funnel → 혐의 대상 표(초과 bad · 확실도) → Order 수별 판정(검증용) → 1위 자세히 → 경계선 비교 순서로 나오고, 데이터 점검 · 계산값 · 판정 방식 설명은 노트북 맨 아래 부록에 있습니다.
 
 - 저장소에는 가상 demo 데이터 `demo_raw.csv`(STEP 20개, 웨이퍼 1,000장 중 good_bad N 30장, 불량 2개, `step_seq`는 `ex100100_1`처럼 STEP 번호 + `_Order 번호`)만 있습니다. demo로 확인하려면 `raw.csv`로 복사해서 실행합니다.
 - `raw.csv`는 저장소에 없고 `.gitignore`로도 빠지므로, 새 버전을 ZIP으로 받아 덮어 풀어도 실제 데이터가 바뀌지 않고 커밋될 일도 없습니다.
