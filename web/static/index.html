@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공정 조합 퍼널</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>공정 조합 퍼널</h1>
+  <span class="muted" id="topnote">raw.csv를 올리고 Run을 누르세요</span>
+</header>
+
+<main class="page">
+  <section class="card setup" aria-label="실행 설정">
+    <div class="row">
+      <label class="file-btn"><input type="file" id="file" accept=".csv"><span>raw.csv 올리기</span></label>
+      <select id="recent" aria-label="최근에 올린 파일"><option value="">올린 파일 없음</option></select>
+      <span class="field"><label for="min_n">MIN_N</label><input id="min_n" type="number" min="2" step="1" value="4"></span>
+      <span class="field"><label for="max_depth">MAX_DEPTH</label><input id="max_depth" type="number" min="1" step="1" value="5">
+        <label class="chk"><input type="checkbox" id="no_limit">제한 없음</label></span>
+      <button id="adv-btn" class="ghost" type="button" aria-expanded="false">고급 설정 <span id="adv-ico">▾</span></button>
+      <span class="grow"></span>
+      <button id="run" class="primary" type="button">Run</button>
+    </div>
+    <div id="adv" class="adv" hidden>
+      <span class="field"><label for="higher_is_worse">Value 방향</label><select id="higher_is_worse"><option value="true">클수록 나쁨</option><option value="false">클수록 좋음</option></select></span>
+      <span class="field"><label for="y_transform">Value 치우침</label><select id="y_transform"><option value="auto">자동 (치우치면 순위로)</option><option value="rank">순위로</option><option value="log">로그로</option><option value="">그대로</option></select></span>
+      <span class="field"><label for="part_adjust">part별 맞춤</label><select id="part_adjust"><option value="true">켬</option><option value="auto">차이가 뚜렷할 때만</option><option value="false">끔</option></select></span>
+      <span class="field"><label for="part_min">작은 part 묶기 (장 미만)</label><input id="part_min" type="number" min="1" step="1" value="20"></span>
+      <span class="field"><label for="rework">재작업 이력</label><select id="rework"><option value="last">마지막 줄</option><option value="first">처음 줄</option></select></span>
+      <span class="field"><label for="spread_adjust">퍼짐 보정</label><select id="spread_adjust"><option value="true">켬</option><option value="false">끔</option></select></span>
+      <span class="field"><label for="same_wafers">같은 웨이퍼 묶기 (%)</label><input id="same_wafers" type="number" min="1" max="100" step="1" value="90"></span>
+      <span class="field"><label for="part_id">part_id</label><input id="part_id" type="text" placeholder="전체"></span>
+      <span class="field"><label for="line_id">line_id</label><input id="line_id" type="text" placeholder="전체"></span>
+      <span class="field"><label for="step_suffix">STEP 이름 규칙</label><input id="step_suffix" type="text" value="_(\d+)$"></span>
+    </div>
+    <div id="status" class="status" hidden></div>
+  </section>
+
+  <section id="results" hidden>
+    <div class="card summary" id="summary"></div>
+    <div class="grid-main">
+      <div class="card">
+        <div class="card-head">
+          <h2>Funnel</h2><span class="muted small">모든 STEP의 조합</span><span class="grow"></span>
+          <span class="seg" id="yseg" role="group" aria-label="funnel 세로축">
+            <button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button>
+          </span>
+        </div>
+        <div class="chart" id="funnel"><canvas></canvas><svg role="img" aria-label="funnel 차트"></svg></div>
+        <div class="legend" id="funnel-legend"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Ranking</h2><span class="muted small" id="rank-sub"></span></div>
+        <div class="table-wrap" id="ranking" tabindex="0" aria-label="혐의 대상 순위표"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detail" class="card" hidden aria-live="polite">
+    <div class="detail-head">
+      <button type="button" class="ghost" id="prev" aria-label="이전 순위">◀</button>
+      <div id="dh" class="dh"></div>
+      <button type="button" class="ghost" id="next" aria-label="다음 순위">▶</button>
+    </div>
+    <div id="dstat" class="dstat"></div>
+    <div class="row sel-row">
+      <span id="chips" class="chips"></span>
+      <button type="button" class="ghost" id="reset">↺ 원래 경로로</button>
+      <span class="grow"></span>
+      <span class="seg" id="cseg" role="group" aria-label="산점도 색">
+        <button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">조합별 색</button>
+      </span>
+    </div>
+    <div class="grid-detail">
+      <div class="sub">
+        <h3>Order × Unit</h3>
+        <div id="blocks" class="blocks"></div>
+        <div class="muted small">칸 = Unit · bad 비율 · 웨이퍼 수 · 클릭해서 고르거나 빼기</div>
+      </div>
+      <div class="sub">
+        <h3>웨이퍼 산점도</h3>
+        <div id="scatter-legend" class="legend"></div>
+        <svg id="scatter" class="chart-svg" role="img" aria-label="웨이퍼 산점도"></svg>
+      </div>
+    </div>
+    <div class="grid-three">
+      <div class="sub">
+        <div class="sub-head"><h3>같은 Order 다른 경로 비교</h3><span class="grow"></span>
+          <span class="seg small" id="pseg" role="group" aria-label="비교 차트 세로축">
+            <button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button>
+          </span></div>
+        <svg id="peers" class="chart-svg" role="img" aria-label="같은 Order 다른 경로 비교"></svg>
+      </div>
+      <div class="sub"><h3>이 경로 vs 나머지</h3><svg id="compare" class="chart-svg" role="img" aria-label="이 경로와 나머지 비교"></svg></div>
+      <div class="sub"><h3>시간에 따른 bad 추이</h3><svg id="trend" class="chart-svg" role="img" aria-label="시간에 따른 bad 추이"></svg></div>
+    </div>
+  </section>
+</main>
+<div id="tip" class="tip" hidden></div>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
