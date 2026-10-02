@@ -14,6 +14,7 @@ const S = {
   picks: [], focus: null, panels: new Map(), ptSize: 4.5, files: [],
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
   db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 raw.csv로만)
+  fView: 'all', pendingDel: new Set(), toasts: [], conclText: '',   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
   home: { items: [], at: -1, mode: null, q: '', db: false },
 };
 
@@ -51,6 +52,91 @@ function showTip(html, x, y) {
   t.style.top = (y + 14 + r.height > window.innerHeight ? y - r.height - 10 : y + 14) + 'px';
 }
 const hideTip = () => { $('#tip').hidden = true; };
+
+// ── 알림: 화면 아래에 잠깐 뜨는 안내. 되돌리기 같은 버튼을 붙일 수 있다 ──────────────
+function toast(html, { actions = [], timeout = 4000, onTimeout = null, kind = '' } = {}) {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  el.innerHTML = `<span class="t-msg">${html}</span>${actions.map((a, i) => `<button type="button" class="t-act" data-i="${i}">${esc(a.label)}</button>`).join('')}`
+    + '<button type="button" class="t-x" aria-label="알림 닫기">✕</button>';
+  let timer = null;
+  let done = false;
+  const handle = {};
+  const close = (expire) => {                          // expire = 시간이 다 됨(또는 ✕): 지우기 같은 미뤄 둔 일을 한다
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 200);
+    S.toasts = S.toasts.filter((t) => t !== handle);
+    if (expire && onTimeout) onTimeout();
+  };
+  handle.close = close;
+  const arm = (ms) => { clearTimeout(timer); if (ms) timer = setTimeout(() => close(true), ms); };
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('.t-act');
+    if (b) { close(false); const a = actions[+b.dataset.i]; if (a.fn) a.fn(); return; }
+    if (e.target.closest('.t-x')) close(true);
+  });
+  el.addEventListener('mouseenter', () => clearTimeout(timer));          // 읽는 동안은 닫지 않는다
+  el.addEventListener('mouseleave', () => arm(timeout ? Math.max(2500, timeout / 2) : 0));
+  S.toasts.push(handle);
+  while (S.toasts.length > 4) S.toasts[0].close(true);
+  $('#toasts').appendChild(el);
+  arm(timeout);
+  return handle;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // 사내 서버(http)에서는 clipboard API가 막혀 있어 예전 방식으로
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+// CSV 내려받기: 첫 줄 = 열 이름. 엑셀에서 한글이 깨지지 않게 BOM을 붙이고, 수식으로 읽힐 글자(= + @)는 막는다
+function download(name, rows) {
+  const cell = (v) => {
+    let x = v == null ? '' : String(v);
+    if (/^[=+@]/.test(x)) x = "'" + x;
+    return /[",\r\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x;
+  };
+  const url = URL.createObjectURL(new Blob(['\ufeff' + rows.map((r) => r.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const safeName = (x) => String(x ?? '').replace(/[^\w.가-힣-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 60);
+const jobTag = () => safeName((S.res?.info.data.job_ids || [])[0] || 'run');
+const isoTime = (ms) => (ms == null ? '' : new Date(ms).toISOString().slice(0, 19).replace('T', ' '));   // 시각은 raw.csv에 적힌 그대로(시간대 변환 없이)
+
+// 용어 도움말: data-help가 붙은 곳에 마우스를 올리면 뜻과 예시가 나온다
+const HELP = {
+  rank: '초과 bad(실제 bad 장수 − 예상 bad 장수)가 큰 순서입니다. 웨이퍼가 90% 이상 같은 대상은 한 줄로 묶습니다.',
+  path: 'STEP 이름 · 설명과, 그 STEP 안에서 웨이퍼가 지난 Order:Unit 경로입니다. 예: O1:ETC101-A → O3:ETC301-A = 1번 Order에서 ETC101-A, 3번 Order에서 ETC301-A를 지난 웨이퍼.',
+  n: '이 경로를 지난 웨이퍼 수입니다.',
+  bad: '이 경로 웨이퍼 중 bad(good_bad = B)의 비율입니다.',
+  exp_bad: '웨이퍼들의 part 구성으로 보면 나와야 할 bad 비율입니다. 예: bad가 잦은 part의 웨이퍼가 많이 지났으면 높게 잡힙니다.',
+  excess: '실제 bad 장수 − 예상 bad 장수 = 이 경로를 고치면 줄어들 bad 웨이퍼 수입니다. 예: +17 = 예상보다 17장 더 bad.',
+  dvalue: 'good_bad가 없을 때의 순위 기준: 웨이퍼 수 × (이 경로 y_value 평균 − 전체 평균).',
+  certainty: '기준선 대비 위치입니다. 1을 넘으면 기준선 밖(우연으로 보기 어려움)입니다. 예: 2.0 = 가운데 선에서 기준선까지 거리의 2배만큼 벗어남.',
+  overlap: '두 대상의 웨이퍼를 합친 것 중 양쪽 모두에 있는 비율입니다. 100%면 웨이퍼가 똑같아 데이터로는 둘을 가릴 수 없습니다.',
+};
 
 // ── 파일 ───────────────────────────────────────────────────────────────
 async function loadFiles(selectId) {
@@ -156,6 +242,7 @@ function route() {
   hideTip();
   if (view === 'home') {
     homeClose();
+    closeDrawer();
     refreshRuns();
     if (changed) $('#home-q').focus();
     return;
@@ -251,7 +338,8 @@ async function loadResult(id, token, note = '') {
     r.merged = r.merged || [];
     r.cross = r.cross || null;
   }
-  status(note ? esc(note) : '');
+  status('');
+  if (note) toast(esc(note));
   S.res = res;
   S.hover = null;
   S.sort = { key: 'rank', dir: 1 };
@@ -259,11 +347,14 @@ async function loadResult(id, token, note = '') {
   S.focus = null;
   clearPanels();
   $('#results').hidden = false;
+  setSetup(false);                                     // 결과가 화면 위로 오게 설정은 한 줄로 접는다
+  syncEmpty();
   const hasBad = S.res.info.has_bad;
   for (const b of $$('#yseg button[data-v=bad]')) b.disabled = !hasBad;
   if (!hasBad && S.yMode === 'bad') setSeg($('#yseg'), (S.yMode = 'judg'));
   const job = (S.res.info.data.job_ids || [])[0];
   $('#topnote').textContent = `${job ? job + ' · ' : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
+  renderConcl();
   renderSummary();
   renderFunnel();
   if (S.res.ranking.length) {
@@ -282,6 +373,98 @@ function hideResults() {
   $('#results').hidden = true;
   $('#details').hidden = true;
   $('#topnote').textContent = 'Job ID를 넣거나 raw.csv를 올리고 Run을 누르세요';
+  setSetup(true);
+  syncEmpty();
+}
+
+// 설정 카드: 결과가 있으면 한 줄 요약(데이터 · 설정 · [설정 바꾸기])으로 접고, 없으면 펼친다
+const ICON_FILE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>';
+const ICON_DB = '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7" ry="2.8"/><path d="M5 5.5v13c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8v-13"/><path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"/></svg>';
+function setSetup(open) {
+  const full = open || !S.res;
+  $('#setup-full').hidden = !full;
+  $('#setup-mini').hidden = full;
+  $('#setup-close').hidden = !(S.res && full);
+  $('#setup-open').setAttribute('aria-expanded', String(full));
+  if (!full) renderMini();
+}
+
+function renderMini() {
+  const v = S.runs.find((x) => x.id === S.runId);
+  const st = settingsText(v ? v.settings : settings());
+  const job = v ? v.job_source : null;
+  const name = v ? (job ? `job ${job}` : v.file_name || 'raw.csv') : S.fileId ? $('#q-file-name').textContent : `job ${$('#job_id').value}`;
+  $('#mini-src').innerHTML = `${job ? ICON_DB : ICON_FILE}<b>${esc(name)}</b>`;
+  $('#mini-set').textContent = st.main + (st.extra ? ' · ' + st.extra : '');
+}
+
+// 결론: 1위를 한 문장으로 (복사해 회의 · 메신저에 붙여 쓰도록 같은 내용을 글로도 만들어 둔다)
+function renderConcl() {
+  const I = S.res.info;
+  const R = S.res.ranking;
+  const hasBad = I.has_bad;
+  const job = (I.data.job_ids || [])[0];
+  const pre = job ? `[job ${job}] ` : '';
+  if (!R.length) {
+    $('#concl-body').innerHTML = `<div class="concl-main">기준선을 넘은 혐의 대상이 없습니다</div>
+      <div class="muted small">조합 ${fmt.int(I.judge.combos)}개를 검사했습니다. MIN_N을 낮추거나 MAX_DEPTH를 늘려 다시 볼 수 있습니다.</div>`;
+    S.conclText = `${pre}기준선을 넘은 혐의 대상 없음 (조합 ${I.judge.combos}개 검사)`;
+    return;
+  }
+  const r = R[0];
+  const vmu = S.res.funnel.bounds.mean.mid;
+  const cert = r.certainty == null ? '–' : r.certainty.toFixed(2);
+  const stat = hasBad ? `웨이퍼 <b>${fmt.int(r.n)}장</b> 중 bad <b class="badtxt">${fmt.pct(r.bad)}</b> (예상 ${fmt.pct(r.exp_bad)}) → 예상보다 <b>${fmt.int(r.excess)}장</b> 더 bad`
+    : `웨이퍼 <b>${fmt.int(r.n)}장</b>의 y_value 평균 <b>${fmt.num(r.vmean)}</b> (전체 ${fmt.num(vmu)})`;
+  const statT = hasBad ? `${r.n}장 중 bad ${fmt.pct(r.bad)} (예상 ${fmt.pct(r.exp_bad)}), 예상보다 ${Math.round(r.excess)}장 더 bad`
+    : `${r.n}장의 y_value 평균 ${fmt.num(r.vmean)} (전체 ${fmt.num(vmu)})`;
+  const others = R.slice(1, 3).map((x) => `${x.rank}위 ${x.step_name} ${x.path} (${hasBad ? `초과 bad ${fmt.signed(x.excess)}장` : `N × ΔValue ${fmt.num(x.excess)}`})`);
+  const more = R.length > 3 ? ` 외 ${R.length - 3}개` : '';
+  const merged = r.merged.length ? ` · 웨이퍼가 같은 대상 ${r.merged.length}개가 1위 줄에 묶여 있습니다(상세에서 비교)` : '';
+  $('#concl-body').innerHTML = `<div class="concl-main"><span class="concl-tag">1위</span><b>${esc(r.step_name)}</b>${r.desc ? `<span class="muted"> · ${esc(r.desc)}</span>` : ''}
+      <span class="path inline">${pathHtml(r.parts)}</span></div>
+    <div class="concl-stat">${stat} · <span class="help-term" data-help="certainty">Certainty</span> ${cert}</div>
+    <div class="muted small">혐의 대상 ${R.length}개${others.length ? ' · ' + esc(others.join(' · ')) + more : ''}${merged}</div>`;
+  S.conclText = `${pre}1위 ${r.step_name}${r.desc ? ` (${r.desc})` : ''} ${r.path}: ${statT}, Certainty ${cert}.`
+    + (R.length > 1 ? ` 혐의 대상 ${R.length}개: ${others.join(', ')}${more}.` : '');
+}
+
+// 실행 기록 서랍 (위쪽 시계 아이콘)
+function openDrawer() {
+  const d = $('#drawer');
+  d.classList.add('open');
+  d.removeAttribute('inert');
+  d.setAttribute('aria-hidden', 'false');
+  $('#backdrop').classList.add('open');
+  $('#top-history').setAttribute('aria-expanded', 'true');
+  refreshRuns();
+  setTimeout(() => $('#hist-q').focus(), 60);
+}
+
+function closeDrawer() {
+  const d = $('#drawer');
+  if (!d.classList.contains('open')) return;
+  d.classList.remove('open');
+  d.setAttribute('inert', '');
+  d.setAttribute('aria-hidden', 'true');
+  $('#backdrop').classList.remove('open');
+  $('#top-history').setAttribute('aria-expanded', 'false');
+}
+
+// 연 결과가 없을 때: 최근 실행 6개를 바로 열 수 있게
+function renderRecent(all) {
+  $('#recent-list').innerHTML = all.slice(0, 6).map((v) => {
+    const jobs = v.job_ids || [];
+    return `<div class="rl-row" role="button" tabindex="0" data-id="${esc(v.id)}">
+      <div class="rl-job"><b>${jobs.length ? esc(jobs[0]) : '–'}</b><span class="muted"> · ${esc((v.analysis_dates || [])[0] || '')}</span></div>
+      <div class="rl-res">${homeResult(v)}</div>
+      <div class="rl-meta">${esc(v.file_name || v.file_id)} · ${when(v.created)} 실행 · ${esc(settingsText(v.settings).main)}</div></div>`;
+  }).join('');
+  syncEmpty();
+}
+
+function syncEmpty() {
+  $('#empty').hidden = !!S.res || !$('#loader').hidden || !$('#recent-list').children.length;
 }
 
 function setHash(id) {
@@ -365,12 +548,15 @@ function resultCell(v) {
 }
 
 function renderHistory() {
+  const all = S.runs.filter((v) => !S.pendingDel.has(v.id));
+  renderRecent(all);
+  $('#top-history').classList.toggle('busy', all.some((v) => ACTIVE.has(v.status)));
   const q = S.histQ.trim().toLowerCase();
   const hay = (v) => [...(v.job_ids || []), ...(v.analysis_dates || []), v.file_name || ''].join(' ').toLowerCase();
-  const rows = q ? S.runs.filter((v) => hay(v).includes(q)) : S.runs;
-  $('#hist-sub').textContent = S.runs.length ? `${S.runs.length}개 · 고르면 다시 계산하지 않고 저장된 결과를 엽니다 · 모든 사용자가 함께 보는 목록` : '';
+  const rows = q ? all.filter((v) => hay(v).includes(q)) : all;
+  $('#hist-sub').textContent = all.length ? `${all.length}개 · 고르면 다시 계산하지 않고 저장된 결과를 엽니다 · 모든 사용자가 함께 보는 목록` : '';
   if (!rows.length) {
-    $('#history').innerHTML = `<div class="empty muted">${S.runs.length ? '찾는 기록이 없습니다.' : '아직 실행 기록이 없습니다. raw.csv를 올리고 Run을 누르면 여기에 남습니다.'}</div>`;
+    $('#history').innerHTML = `<div class="empty muted">${all.length ? '찾는 기록이 없습니다.' : '아직 실행 기록이 없습니다. Job ID를 넣거나 raw.csv를 올리고 Run을 누르면 여기에 남습니다.'}</div>`;
     return;
   }
   const body = rows.map((v) => {
@@ -393,29 +579,49 @@ function renderHistory() {
     <th class="l">File</th><th class="l">Settings</th><th class="l">Result</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
-async function removeRun(id) {
+function removeRun(id) {
   const v = S.runs.find((x) => x.id === id);
   if (!v) return;
-  const what = `${(v.job_ids || [])[0] || v.file_name || v.file_id} · ${when(v.created, true)} 실행`;
-  const msg = ACTIVE.has(v.status)
-    ? `돌고 있는 판정을 멈추고 이 기록을 지울까요?\n${what}`
-    : `이 실행 기록을 지울까요? 서버에 저장된 결과도 지워져 되돌릴 수 없습니다.\n${what}`;
-  if (!confirm(msg)) return;
-  try {
-    await api(`/api/runs/${id}`, { method: 'DELETE' });
-  } catch (e) {
-    status('지우지 못했습니다: ' + esc(e.message), 'error');
+  const what = `${(v.job_ids || [])[0] || v.file_name || v.file_id} · ${when(v.created)} 실행`;
+  if (ACTIVE.has(v.status)) {                          // 돌고 있는 실행은 멈추면 되돌릴 수 없어서 한 번 묻는다
+    toast(`돌고 있는 판정을 멈추고 지울까요? <span class="t-sub">${esc(what)}</span>`,
+      { timeout: 0, actions: [{ label: '멈추고 지우기', fn: () => dropRun(id, true, what) }, { label: '취소' }] });
     return;
   }
-  if (S.runId === id) {
+  dropRun(id, false, what);
+}
+
+// 목록에서 바로 빼고, 6초 안에 되돌리기를 누르지 않으면 서버에서 지운다 (돌고 있던 실행은 바로)
+function dropRun(id, now, what) {
+  const wasOpen = S.runId === id;
+  S.pendingDel.add(id);
+  if (wasOpen) {
     S.watch++;
     S.runId = null;
     setHash(null);
     hideLoader();
     hideResults();
-    status('실행 기록을 지웠습니다.');
   }
-  await refreshRuns();
+  renderHistory();
+  const commit = async () => {
+    try {
+      await api(`/api/runs/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      toast('지우지 못했습니다: ' + esc(e.message), { kind: 'error' });
+    }
+    S.pendingDel.delete(id);
+    await refreshRuns();
+  };
+  if (now) {
+    commit();
+    toast(`실행을 멈추고 기록을 지웠습니다 <span class="t-sub">${esc(what)}</span>`);
+    return;
+  }
+  toast(`실행 기록을 지웠습니다 <span class="t-sub">${esc(what)}</span>`, {
+    timeout: 6000,
+    onTimeout: commit,
+    actions: [{ label: '되돌리기', fn: () => { S.pendingDel.delete(id); renderHistory(); if (wasOpen) openRun(id); } }],
+  });
 }
 
 function setSeg(el, v) {
@@ -472,6 +678,20 @@ function symRange(b, ns, vals) {
   return [b.mid - half, b.mid + half];
 }
 
+// 점 위주: 점이 있는 범위와 가운데 웨이퍼 수에서의 경계선만 (띠 양 끝은 잘릴 수 있음)
+function fitRange(b, ns, vals) {
+  const ok = vals.filter((v) => v != null && isFinite(v));
+  let lo = ok.length ? Math.min(...ok) : 0;
+  let hi = ok.length ? Math.max(...ok) : 1;
+  if (b) {
+    const mid = Math.floor(ns.length / 2);
+    if (b.lo[mid] != null) lo = Math.min(lo, b.lo[mid]);
+    if (b.hi[mid] != null) hi = Math.max(hi, b.hi[mid]);
+  }
+  const pad = (hi - lo || 1) * 0.06;
+  return [lo - pad, hi + pad];
+}
+
 function renderFunnel() {
   const box = $('#funnel');
   const cv = $('canvas', box);
@@ -492,7 +712,7 @@ function renderFunnel() {
   const vals = gv.length ? [quantile(gv, 0.002), quantile(gv, 0.998)] : [];
   for (const k of fn.marks) if (k[m] != null) vals.push(k[m]);
   const b = bd[m];
-  let [lo, hi] = symRange(b, ns, vals);
+  let [lo, hi] = S.fView === 'pts' ? fitRange(b, ns, vals) : symRange(b, ns, vals);
   if (m === 'bad') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
   const ys = scaleLin(lo, hi, B, T);
   S.fn = { L, R, T, B, xs, ys, lo, hi };
@@ -679,7 +899,8 @@ function renderRanking() {
   const hasBad = S.res.info.has_bad;
   const cols = COLS.filter((c) => hasBad || !c.bad);
   const label = (c) => (c.key === 'excess' && !hasBad ? 'N × ΔValue' : c.label);   // good_bad가 없으면 순위 기준 = 웨이퍼 수 × Value 차이
-  const head = cols.map((c) => `<th class="${c.left ? 'l' : 'num'}" data-k="${c.key}">${label(c)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▴' : ' ▾') : ''}</th>`).join('');
+  const help = (c) => `<span class="help" data-help="${c.key === 'excess' && !hasBad ? 'dvalue' : c.key}">ⓘ</span>`;
+  const head = cols.map((c) => `<th class="${c.left ? 'l' : 'num'}" data-k="${c.key}">${label(c)}${help(c)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▴' : ' ▾') : ''}</th>`).join('');
   const cell = (c, r) => {
     switch (c.key) {
       case 'rank': return `<td class="num">${r.rank}</td>`;
@@ -805,7 +1026,45 @@ function makePanel(sp) {
   const peers = $('[data-r=peers]', el);
   peers.addEventListener('mousemove', (e) => peerTip(p, e));
   peers.addEventListener('mouseleave', hideTip);
+  const sc = $('[data-r=scatter]', el);
+  sc.addEventListener('mousemove', (e) => scatterTip(p, e));
+  sc.addEventListener('mouseleave', hideTip);
   return p;
+}
+
+// 산점도 점 = 웨이퍼 하나: lot · wafer_id · 경로 · 시각 · y_value · good/bad
+function scatterTip(p, e) {
+  const c = e.target.closest('circle[data-i]');
+  if (!c || !p.det) { hideTip(); return; }
+  const D = p.det;
+  const w = D.wafers;
+  const i = +c.dataset.i;
+  const name = w.wid ? `${esc(w.lots[w.li[i]])} · wafer ${esc(w.wid[i])}` : `웨이퍼 ${i + 1} (이 실행은 웨이퍼 번호를 저장하지 않았습니다)`;
+  showTip(`<b>${name}</b><br>${w.g[i] === D.sel_group ? '선택 경로' : '다른 경로'} ${esc(D.groups[w.g[i]].label)}`
+    + `<br>tkin_time (${esc(D.time_order)}) ${isoTime(w.t[i]).slice(0, 16)}<br>y_value ${fmt.num(w.v[i])}`
+    + (D.has_bad ? ` · ${w.b[i] ? '<span class="badtxt">bad</span>' : 'good'}` : ''), e.clientX, e.clientY);
+}
+
+// 이 카드의 웨이퍼 목록(고른 Order를 모두 지난 웨이퍼)을 CSV로
+function waferCsv(p) {
+  const D = p.det;
+  const w = D.wafers;
+  const ids = !!w.wid;
+  const head = [...(ids ? ['root_lot_id', 'wafer_id'] : []), `tkin_time_${D.time_order}`, 'y_value', ...(D.has_bad ? ['good_bad'] : []), 'unit_path', 'selected_path'];
+  const rows = w.v.map((v, i) => [...(ids ? [w.lots[w.li[i]], w.wid[i]] : []), isoTime(w.t[i]), v, ...(D.has_bad ? [w.b[i] ? 'B' : 'G'] : []),
+    D.groups[w.g[i]].label, w.g[i] === D.sel_group ? 'Y' : 'N']);
+  download(`wafers_${jobTag()}_${safeName(D.step_name)}_${safeName(D.selection.label)}.csv`, [head, ...rows]);
+  toast(`웨이퍼 ${fmt.int(rows.length)}장 목록을 내려받았습니다${ids ? '' : ' (이 실행은 웨이퍼 번호 없이 저장돼 있어 번호 열은 빠졌습니다. 다시 실행하면 생깁니다)'}`);
+}
+
+// 순위표 전체를 CSV로
+function rankingCsv() {
+  const hasBad = S.res.info.has_bad;
+  const head = ['rank', 'step', 'step_desc', 'path', 'n', ...(hasBad ? ['bad_rate', 'expected_bad_rate', 'excess_bad'] : ['n_x_dvalue']), 'certainty', 'y_value_mean', 'same_wafer_targets', 'note'];
+  const rows = S.res.ranking.map((r) => [r.rank, r.step_name, r.desc, r.path, r.n, ...(hasBad ? [r.bad, r.exp_bad, r.excess] : [r.excess]), r.certainty, r.vmean,
+    r.merged.map((m) => `${m.step_name} ${m.path}`).join(' | '), r.note]);
+  download(`ranking_${jobTag()}.csv`, [head, ...rows]);
+  toast(`순위표 ${rows.length}줄을 내려받았습니다`);
 }
 
 function panelClick(p, e) {
@@ -820,6 +1079,7 @@ function panelClick(p, e) {
     return;
   }
   if (act === 'close') { closePick(p.id); return; }
+  if (act === 'wcsv') { if (p.det) waferCsv(p); return; }
   if (act === 'reset') { p.sel = p.spec.items.map((x) => x.slice()); loadPanel(p); return; }
   const seg = e.target.closest('[data-r=cseg] button, [data-r=pseg] button');
   if (seg) {
@@ -908,7 +1168,7 @@ function renderStat(p) {
   const sel = D.selection;
   $('[data-r=dstat]', p.el).innerHTML = `지금 선택 <b>${esc(sel.label)}</b> · 웨이퍼 <b>${fmt.int(sel.n)}</b>장`
     + (D.has_bad ? ` · bad <span class="badtxt">${fmt.pct(sel.bad)}</span> (같은 Order를 지난 나머지 ${fmt.int(sel.rest_n)}장 ${fmt.pct(sel.rest_bad)})` : '')
-    + ` · y_value 평균 ${fmt.num(sel.vmean)} · Certainty ${sel.certainty == null ? '–' : sel.certainty.toFixed(2)}`
+    + ` · y_value 평균 ${fmt.num(sel.vmean)} · <span class="help-term" data-help="certainty">Certainty</span> ${sel.certainty == null ? '–' : sel.certainty.toFixed(2)}`
     + (orig ? '' : '<span class="badge">탐색 중 (판정 아님)</span>');
   $('[data-r=chips]', p.el).innerHTML = p.sel.slice().sort((a, b) => a[0] - b[0]).map(([q, u]) => {
     const o = D.orders[q];
@@ -942,7 +1202,7 @@ function renderRelated(p) {
       <td class="l diff">${rep ? '' : diffText(t, hasBad)}</td>
       <td class="num">${rep ? '' : `<button type="button" class="ghost mini" data-rel="merged" data-key="${esc(t.key)}">상세 열기</button>`}</td></tr>`;
     h += `<div class="rel-head"><b>같은 웨이퍼로 이 줄에 묶인 대상</b><span class="muted small">웨이퍼가 ${Math.round((sw ?? 0.9) * 100)}% 이상 같은 대상은 순위표에 한 줄로 나옵니다</span></div>
-      <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">겹침</th>${hasBad ? '<th class="num">Bad %</th>' : ''}
+      <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">겹침<span class="help" data-help="overlap">ⓘ</span></th>${hasBad ? '<th class="num">Bad %</th>' : ''}
       <th class="num">${hasBad ? 'Excess bad' : 'N × ΔValue'}</th><th class="num">Certainty</th><th class="l">서로 다른 웨이퍼</th><th></th></tr></thead>
       <tbody>${tr(row, true)}${row.merged.map((t) => tr(t, false)).join('')}</tbody></table></div>
       <div class="muted small rel-why">순위표에는 ${metric}가 큰 쪽이 올라오고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)이 올라옵니다.
@@ -1048,7 +1308,7 @@ function renderScatter(p) {
   const r = S.ptSize;
   const op = r > 4 ? 0.7 : 0.85;
   const selFirst = idx.slice().sort((a, b) => (w.g[a] === D.sel_group ? 1 : 0) - (w.g[b] === D.sel_group ? 1 : 0));
-  for (const i of selFirst) s += `<circle cx="${xs(w.t[i]).toFixed(1)}" cy="${ys(w.v[i]).toFixed(1)}" r="${r}" fill="${G.color(w.g[i])}" opacity="${op}"/>`;
+  for (const i of selFirst) s += `<circle cx="${xs(w.t[i]).toFixed(1)}" cy="${ys(w.v[i]).toFixed(1)}" r="${r}" fill="${G.color(w.g[i])}" opacity="${op}" data-i="${i}"/>`;
   el.innerHTML = s;
 }
 
@@ -1187,6 +1447,7 @@ function buildScene() {
 
 function showLoader(text, sec, frac) {
   $('#loader').hidden = false;
+  syncEmpty();
   $('#loader-text').textContent = text;
   $('#loader-time').textContent = sec != null ? ` · ${Math.round(sec)}초` : '';
   $('#loader-bar').style.width = `${Math.round(frac * 100)}%`;
@@ -1194,6 +1455,7 @@ function showLoader(text, sec, frac) {
 
 function hideLoader() {
   $('#loader').hidden = true;
+  syncEmpty();
 }
 
 // ── 시작 화면 ─────────────────────────────────────────────────────────
@@ -1320,7 +1582,8 @@ function bindHome() {
       await loadFiles(meta.id);
       homeMsg('');
       go('#analysis');
-      status(`올렸습니다 · ${esc(meta.name)} (${(meta.size / 1e6).toFixed(0)}MB). 설정을 확인하고 Run을 누르세요.`);
+      status('');
+      toast(`올렸습니다 · ${esc(meta.name)} (${(meta.size / 1e6).toFixed(0)}MB). 설정을 확인하고 Run을 누르세요.`);
       $('#run').focus();
     } catch (err) {
       homeMsg(esc(err.message), 'error');
@@ -1360,6 +1623,7 @@ function bindRanking() {
   tbl.addEventListener('mouseleave', () => { S.hover = null; drawMarks(); });
   tbl.addEventListener('mousedown', (e) => { if (e.shiftKey) e.preventDefault(); });   // Shift+클릭 때 글자가 선택되지 않게
   tbl.addEventListener('click', (e) => {
+    if (e.target.closest('.help')) return;              // ⓘ는 설명만 (정렬하지 않음)
     const th = e.target.closest('th');
     if (th) {
       const k = th.dataset.k;
@@ -1422,6 +1686,8 @@ function bindFunnel() {
 function init() {
   readColors();
   S.ptSize = store.get('uc.ptSize2', 4.5);
+  S.fView = store.get('uc.fview', 'all');
+  setSeg($('#fview'), S.fView);
   document.addEventListener('uc-theme', () => { readColors(); rerender(); });   // 밝은 · 어두운 화면을 바꾸면 차트 색을 다시 읽어 그린다
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(rerender, 150); });
   window.addEventListener('hashchange', route);
@@ -1432,7 +1698,8 @@ function init() {
     try {
       const meta = await upload(f, (p) => status(uploadBar(f.name, p)));
       await loadFiles(meta.id);
-      status(`올렸습니다 · ${esc(meta.name)} (${(meta.size / 1e6).toFixed(0)}MB). Run을 누르세요.`);
+      status('');
+      toast(`올렸습니다 · ${esc(meta.name)} (${(meta.size / 1e6).toFixed(0)}MB). Run을 누르세요.`);
     } catch (err) {
       status(esc(err.message), 'error');
     }
@@ -1450,15 +1717,45 @@ function init() {
   $('#q-file-x').addEventListener('click', () => { detachFile(); $('#job_id').focus(); });
   $('#job_id').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
   $('#status').addEventListener('click', (e) => { if (e.target.closest('[data-act=upload]')) $('#file').click(); });
-  $('#top-history').addEventListener('click', () => {
-    $('#history-card').scrollIntoView({ behavior: smooth(), block: 'start' });
-    $('#hist-q').focus({ preventScroll: true });
-  });
+  $('#top-history').addEventListener('click', () => { if ($('#drawer').classList.contains('open')) closeDrawer(); else openDrawer(); });
+  $('#drawer-close').addEventListener('click', closeDrawer);
+  $('#backdrop').addEventListener('click', closeDrawer);
+  $('#empty-all').addEventListener('click', openDrawer);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
   $('#history').addEventListener('click', (e) => {
     const del = e.target.closest('[data-del]');
     if (del) { removeRun(del.dataset.del); return; }
     const tr = e.target.closest('tbody tr[data-id]');
-    if (tr && (tr.dataset.id !== S.runId || !S.res)) openRun(tr.dataset.id);
+    if (!tr) return;
+    closeDrawer();
+    if (tr.dataset.id !== S.runId || !S.res) openRun(tr.dataset.id);
+  });
+  const openRecent = (e) => { const r = e.target.closest('.rl-row'); if (r) openRun(r.dataset.id); };
+  $('#recent-list').addEventListener('click', openRecent);
+  $('#recent-list').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRecent(e); } });
+  $('#setup-open').addEventListener('click', () => { setSetup(true); if (!S.fileId) $('#job_id').focus(); });
+  $('#setup-close').addEventListener('click', () => setSetup(false));
+  $('#concl-copy').addEventListener('click', async () => {
+    toast(await copyText(S.conclText) ? '결론 문장을 복사했습니다. 회의록 · 메신저에 붙여 넣으세요.' : '복사하지 못했습니다. 문장을 드래그해서 복사하세요.', { kind: '' });
+  });
+  $('#rank-csv').addEventListener('click', () => { if (S.res) rankingCsv(); });
+  $('#fview').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || !S.res) return;
+    S.fView = b.dataset.v;
+    store.set('uc.fview', S.fView);
+    setSeg($('#fview'), S.fView);
+    renderFunnel();
+  });
+  document.addEventListener('mouseover', (e) => {      // 용어 도움말
+    const h = e.target.closest('[data-help]');
+    if (!h) return;
+    const r = h.getBoundingClientRect();
+    showTip(`<div class="help-tip">${esc(HELP[h.dataset.help] || '')}</div>`, r.left, r.bottom - 6);
+  });
+  document.addEventListener('mouseout', (e) => {
+    const h = e.target.closest('[data-help]');
+    if (h && !(e.relatedTarget && h.contains(e.relatedTarget))) hideTip();
   });
   $('#hist-q').addEventListener('input', (e) => { S.histQ = e.target.value; renderHistory(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRuns(); });   // 다시 보면 바로 새로 읽음

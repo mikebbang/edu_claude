@@ -54,7 +54,7 @@
   <a class="uc-logo brand" href="#" title="처음 화면으로" aria-label="UNIT_COMMONALITY 처음 화면으로"><span class="w1">UNIT</span><span class="us">_</span><span class="w2">COMMONALITY</span></a>
   <span class="muted" id="topnote">Job ID를 넣거나 raw.csv를 올리고 Run을 누르세요</span>
   <span class="grow"></span>
-  <button class="icon-btn" id="top-history" type="button" title="실행 기록" aria-label="실행 기록으로">
+  <button class="icon-btn" id="top-history" type="button" title="실행 기록 (History)" aria-label="실행 기록 열기" aria-controls="drawer" aria-expanded="false">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V9H8"/><path d="M12 7.5V12l3 2"/></svg>
   </button>
   <a class="icon-btn" href="guide.html" title="사용자 가이드" aria-label="사용자 가이드">
@@ -67,7 +67,14 @@
 </header>
 
 <main class="page">
-  <section class="card setup" aria-label="실행 설정">
+  <section class="card setup" id="setup" aria-label="실행 설정">
+    <!-- 결과가 나오면 한 줄로 접는다: 지금 결과의 데이터 · 설정 · [설정 바꾸기] -->
+    <div class="setup-mini" id="setup-mini" hidden>
+      <span class="mini-src" id="mini-src"></span><span class="muted mini-set" id="mini-set"></span><span class="grow"></span>
+      <button type="button" class="ghost" id="setup-open" aria-expanded="false">설정 바꾸기 ▾</button>
+    </div>
+    <div class="setup-full" id="setup-full">
+    <button type="button" class="ghost setup-close" id="setup-close" hidden>접기 ▴</button>
     <!-- 데이터: Job ID를 넣거나(DB에서 가져옴) 왼쪽 csv로 raw.csv를 붙인다. 붙인 파일이 있으면 그 파일로 실행 -->
     <div class="qbar" id="qbar">
       <button class="q-chip" id="csv-btn" type="button" title="raw.csv 올려서 분석" aria-label="raw.csv 올려서 분석">
@@ -109,22 +116,29 @@
       <div class="bar"><i id="loader-bar"></i></div>
     </div>
     <div id="status" class="status" hidden></div>
+    </div>
   </section>
 
-  <section class="card" id="history-card" aria-label="실행 기록">
-    <div class="card-head">
-      <h2>History</h2><span class="muted small" id="hist-sub"></span><span class="grow"></span>
-      <input id="hist-q" type="search" placeholder="job_id · 파일 이름 찾기" aria-label="실행 기록 찾기">
-    </div>
-    <div class="table-wrap hist-wrap" id="history" aria-label="실행 기록 목록"><div class="empty muted">불러오는 중…</div></div>
+  <!-- 연 결과가 없을 때: 최근 실행 바로 열기 -->
+  <section class="card" id="empty" hidden aria-label="최근 실행">
+    <div class="card-head"><h2>최근 실행</h2><span class="muted small">눌러서 저장된 결과를 엽니다</span><span class="grow"></span>
+      <button type="button" class="ghost mini" id="empty-all">전체 실행 기록 ▸</button></div>
+    <div class="recent-list" id="recent-list"></div>
   </section>
 
   <section id="results" hidden>
+    <div class="card concl" id="concl" aria-label="결론">
+      <div class="concl-body" id="concl-body"></div>
+      <button type="button" class="ghost mini" id="concl-copy" title="결론 문장을 복사해 회의 · 메신저에 붙여 넣기">복사</button>
+    </div>
     <div class="card summary" id="summary"></div>
     <div class="grid-main">
       <div class="card">
         <div class="card-head">
           <h2>Funnel</h2><span class="muted small" id="fhint">모든 STEP의 조합 · 드래그로 여러 순위 고르기 (Ctrl · ⌘ · Shift: 더하기)</span><span class="grow"></span>
+          <span class="seg small" id="fview" role="group" aria-label="funnel 보는 범위" title="띠 전체: 경계선 양 끝까지 · 점 위주: 점이 모인 곳을 크게">
+            <button type="button" data-v="all" class="on">띠 전체</button><button type="button" data-v="pts">점 위주</button>
+          </span>
           <span class="seg" id="yseg" role="group" aria-label="funnel 세로축">
             <button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button>
           </span>
@@ -133,7 +147,8 @@
         <div class="legend" id="funnel-legend"></div>
       </div>
       <div class="card">
-        <div class="card-head"><h2>Ranking</h2><span class="muted small" id="rank-sub"></span></div>
+        <div class="card-head"><h2>Ranking</h2><span class="muted small" id="rank-sub"></span><span class="grow"></span>
+          <button type="button" class="ghost mini" id="rank-csv" title="순위표를 CSV로 내려받기"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg>CSV</button></div>
         <div class="table-wrap" id="ranking" tabindex="0" aria-label="혐의 대상 순위표"></div>
       </div>
     </div>
@@ -143,6 +158,19 @@
     <div class="details-note muted small" id="details-note" hidden></div>
   </section>
 </main>
+
+<!-- 실행 기록: 위쪽 시계 아이콘으로 여는 오른쪽 서랍 -->
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer" aria-label="실행 기록" aria-hidden="true" inert>
+  <div class="drawer-head">
+    <h2>History</h2><span class="muted small" id="hist-sub"></span><span class="grow"></span>
+    <input id="hist-q" type="search" placeholder="job_id · 파일 이름 찾기" aria-label="실행 기록 찾기">
+    <button type="button" class="icon-btn" id="drawer-close" title="닫기 (Esc)" aria-label="실행 기록 닫기">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="table-wrap hist-wrap" id="history" aria-label="실행 기록 목록"><div class="empty muted">불러오는 중…</div></div>
+</aside>
 </div>
 
 <!-- 상세 카드 하나 (고른 대상마다 복제) -->
@@ -168,6 +196,7 @@
       <div class="sub cell">
         <div class="sub-head"><h3>웨이퍼 산점도</h3><span class="grow"></span>
           <label class="size-ctl muted small">점 크기 <input type="range" min="1" max="8" step="0.5" data-a="size" aria-label="산점도 점 크기"></label>
+          <button type="button" class="ghost mini" data-a="wcsv" title="이 경로와 나머지 웨이퍼 목록(lot · wafer_id · 시각 · y_value · good_bad)을 CSV로"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg>CSV</button>
           <span class="seg small" data-r="cseg" role="group" aria-label="산점도 색"><button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">조합별 색</button></span>
         </div>
         <div class="legend" data-r="slegend"></div>
@@ -188,6 +217,7 @@
 </template>
 
 <div id="tip" class="tip" hidden></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="charts.js"></script>
 <script src="app.js"></script>
 </body>

@@ -47,7 +47,8 @@ button, input, select { font: inherit; color: inherit; }
 .topbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 14px; padding: 10px 24px;
   background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 .topbar .uc-logo { font-size: 20px; text-decoration: none; }
-.icon-btn { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--ink2); background: transparent; border: 1px solid transparent; border-radius: 10px; }
+.icon-btn { position: relative; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--ink2); background: transparent; border: 1px solid transparent; border-radius: 10px; }
+.icon-btn.busy::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--ring); box-shadow: 0 0 0 2px var(--card); animation: pulse .9s ease-in-out infinite alternate; }
 .icon-btn svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .icon-btn:hover, .icon-btn:focus-visible { color: var(--accent); background: var(--accent-bg); border-color: var(--accent-line); }
 .theme-btn .ico-sun { display: none; }
@@ -76,7 +77,8 @@ button.primary:disabled { opacity: 0.55; }
 button.ghost { border-color: transparent; background: none; color: var(--ink2); }
 button.ghost:hover { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent); }
 button.ghost:disabled { opacity: 0.4; background: none; border-color: transparent; color: var(--ink2); }
-button.mini { height: 26px; padding: 0 10px; font-size: 12px; color: var(--accent); white-space: nowrap; }
+button.mini { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; font-size: 12px; color: var(--accent); white-space: nowrap; }
+button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* 데이터: Job ID(DB) 또는 raw.csv 파일 */
 /* 데이터 줄: 시작 화면 검색창과 같은 모양 (왼쪽 csv 칩 · 붙인 파일 · Job ID) */
 .qbar { display: flex; align-items: center; gap: 8px; height: 52px; padding: 5px 6px; max-width: 720px; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
@@ -95,6 +97,30 @@ button.mini { height: 26px; padding: 0 10px; font-size: 12px; color: var(--accen
 .q-x { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; flex: none; }
 .q-x:hover { background: var(--card); border: 0; color: var(--accent); }
 .opt-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+/* 결과가 나오면 한 줄로 접힌 설정 */
+.setup-mini { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.mini-src { display: inline-flex; align-items: center; gap: 7px; flex: none; padding: 6px 12px; border-radius: 10px; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-line); }
+.mini-src svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mini-set { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-close { float: right; height: 28px; margin: -2px -4px 0 8px; font-size: 12px; }
+/* 연 결과가 없을 때 최근 실행 */
+.recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
+.rl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; transition: border-color .15s, background-color .15s; }
+.rl-row:hover, .rl-row:focus-visible { border-color: var(--accent-line); background: var(--accent-bg); outline: none; }
+.rl-job { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-res { font-size: 12px; text-align: right; white-space: nowrap; }
+.rl-meta { grid-column: 1 / -1; font-size: 12px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 결론 한 줄 */
+.concl { display: flex; align-items: flex-start; gap: 12px; border-left: 4px solid var(--ring); }
+.concl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.concl-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 15px; }
+.concl-tag { display: inline-block; padding: 1px 8px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); font-size: 12px; font-weight: 700; }
+.concl-stat { font-size: 14px; }
+/* 용어 도움말 */
+.help { display: inline-block; margin-left: 3px; color: var(--muted); font-size: 11px; font-weight: 400; cursor: help; }
+.help:hover { color: var(--accent); }
+.help-term { border-bottom: 1px dotted var(--muted); cursor: help; }
+.help-tip { max-width: 280px; }
 .src-note { margin-top: 8px; }
 .adv { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .adv .field { justify-content: space-between; }
@@ -143,7 +169,7 @@ button.mini { height: 26px; padding: 0 10px; font-size: 12px; color: var(--accen
 .warn { color: var(--warn); }
 .grid-main { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 12px; }
 .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.card-head h2::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--ring); vertical-align: middle; }
+.card-head h2::before, .drawer-head h2::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--ring); vertical-align: middle; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex: none; background: var(--card); }
 .seg button { border: 0; border-radius: 0; height: 30px; padding: 0 12px; background: none; color: var(--ink2); }
 .seg button + button { border-left: 1px solid var(--line); }
@@ -185,10 +211,10 @@ table.rk .note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient
 table.hist th { cursor: default; }
 table.hist td { vertical-align: middle; }
 table.hist .nowrap { white-space: nowrap; }
-table.hist .jid { font-weight: 500; }
+table.hist .jid { font-weight: 500; white-space: nowrap; }
 table.hist .fname { word-break: break-all; }
 table.hist .err { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-table.hist .del { height: 24px; padding: 0 8px; font-size: 12px; }
+table.hist .del { height: 24px; padding: 0 8px; font-size: 12px; white-space: nowrap; }
 table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
 #hist-q { width: 210px; }
 .empty { padding: 14px 4px; }
@@ -209,7 +235,7 @@ table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
 .dh .t { font-size: 15px; font-weight: 600; }
 .dstat { margin: 4px 0 8px 40px; color: var(--ink2); }
 .dstat b { color: var(--ink); font-weight: 600; }
-.dstat .badtxt { color: var(--bad); font-weight: 600; }
+.badtxt { color: var(--bad); font-weight: 600; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--hover); color: var(--warn); font-size: 12px; margin-left: 6px; }
 .sel-row { margin-bottom: 10px; }
 .chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
@@ -246,6 +272,33 @@ table.rel .tag { margin-left: 0; color: var(--accent); background: var(--accent-
 .blocks .b .nm { font-weight: 500; }
 .tip { position: fixed; z-index: 30; max-width: 300px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font-size: 12px; line-height: 1.5; box-shadow: 0 12px 30px -12px #17233a52; pointer-events: none; }
 .tip b { font-weight: 600; }
+.tip .badtxt { color: var(--bad); }
+/* 알림: 화면 아래 가운데 */
+.toasts { position: fixed; left: 50%; bottom: 20px; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 8px; transform: translateX(-50%); pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 10px; max-width: min(680px, 92vw); padding: 9px 8px 9px 16px; border-radius: 12px; background: #17233a; color: #f2f5f8;
+  box-shadow: 0 16px 36px -14px #17233a8c; font-size: 13px; pointer-events: auto; animation: toast-in .2s ease-out; transition: opacity .2s, transform .2s; }
+[data-theme="dark"] .toast { background: #2b3445; }
+.toast.error { background: #8f2424; }
+.toast.out { opacity: 0; transform: translateY(6px); }
+.t-msg { flex: 1; min-width: 0; }
+.t-sub { margin-left: 4px; color: #aab3c2; }
+.toast .t-act { height: 28px; padding: 0 12px; border: 0; border-radius: 8px; background: #0abab5; color: #062321; font-weight: 700; }
+.toast .t-act + .t-act { background: transparent; color: #cfd8e3; font-weight: 500; }
+.toast .t-act:hover { background: #2ccdc7; color: #062321; }
+.toast .t-act + .t-act:hover { background: #ffffff1a; color: #ffffff; }
+.toast .t-x { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #aab3c2; }
+.toast .t-x:hover { background: #ffffff1a; color: #ffffff; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+/* 실행 기록 서랍 (오른쪽) */
+.backdrop { position: fixed; inset: 0; z-index: 40; background: #17233a40; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.backdrop.open { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 41; display: flex; flex-direction: column; gap: 10px; width: min(920px, 94vw); padding: 14px 16px;
+  background: var(--card); border-left: 1px solid var(--line); box-shadow: -18px 0 40px -20px #17233a59; transform: translateX(100%); visibility: hidden;
+  transition: transform .25s cubic-bezier(.2, .8, .2, 1), visibility .25s; }
+.drawer.open { transform: none; visibility: visible; }
+.drawer-head { display: flex; align-items: center; gap: 8px; }
+.drawer .hist-wrap { flex: 1; min-height: 0; max-height: none; }
+@media (prefers-reduced-motion: reduce) { .drawer, .backdrop, .toast { transition: none; animation: none; } }
 .tip svg { display: block; margin: 4px 0; }
 svg text { font-family: inherit; }
 @media (max-width: 1100px) { .grid-main, .grid-2x2 { grid-template-columns: minmax(0, 1fr); } }

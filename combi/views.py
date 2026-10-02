@@ -154,7 +154,7 @@ def run_payload(result):
 def detail_state(result):
     """상세 계산에 필요한 것만 추린 결과 (실행 기록으로 저장해 두었다가 다시 불러온다). detail_payload에 그대로 넣는다"""
     d, r = result.data, result.res
-    keep = ('N', 'Y', 'B', 'bad', 'value', 'steps', 'assign', 'tk', 't_base', 'part_idx', 'part_sig', 'bad_exp')
+    keep = ('N', 'Y', 'B', 'bad', 'value', 'steps', 'assign', 'tk', 't_base', 'part_idx', 'part_sig', 'bad_exp', 'lots', 'wafer_ids')
     return SimpleNamespace(data={k: d[k] for k in keep if k in d}, res={k: r[k] for k in ('mu', 'sd', 'N', 'r', 'p0', 'signals')},
                            zk=list(result.zk), spread=result.spread, cfg=result.cfg)
 
@@ -225,6 +225,9 @@ def detail_payload(result, step, items):
     has_t = tk >= 0
     wafers = {'t': [base_ms + 1000 * int(t) if ok_ else None for t, ok_ in zip(tk.tolist(), has_t.tolist())],
               'v': nums(value[through], 6), 'b': [int(x) for x in bad01[through]] if has_b else None, 'g': inv.tolist()}
+    if d.get('wafer_ids') is not None:                      # 웨이퍼 이름 (예전에 저장한 실행에는 없음): lot은 목록 + 번호로 줄여 보낸다
+        lot_u, lot_i = np.unique(np.asarray(d['lots'])[through].astype(str), return_inverse=True)
+        wafers.update(lots=lot_u.tolist(), li=lot_i.ravel().tolist(), wid=[str(w) for w in np.asarray(d['wafer_ids'])[through]])
     pn = [p['n'] for p in peers] or [result.cfg.min_n]
     peer_bounds = _bounds(sc, thr, _grid(max(2, result.cfg.min_n), max(pn) * 1.15)) if math.isfinite(thr) else None
     if peer_bounds:                                         # 종합 축은 큰 funnel과 같은 눈금(자기 기준 대비 위치 × Order 1개 기준 띠)

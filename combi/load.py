@@ -114,6 +114,7 @@ def read_raw(csv_path, cfg):
     wf = raw.groupby('wafer_key').agg(root_lot_id=('root_lot_id', 'first'), part=('part_id', 'first'), part_n=('part_id', 'nunique'),
                                       y=('y', 'first'), y_n=('y', 'nunique'), bad=('bad', 'first'), gb=('gb', 'first'), gb_n=('gb', 'nunique'))
     wf['root_lot_id'], wf['part'] = wf['root_lot_id'].astype(object), wf['part'].astype(object)
+    wf['wafer_id'] = np.asarray(wid.categories, dtype=object)[wf.index.to_numpy() % (len(wid.categories) + 1)]   # 화면 · 내려받기에 보여 줄 wafer_id
     if not wf['y'].notna().all():
         raise ValueError(f"y_value가 비어 있거나 숫자가 아닌 웨이퍼가 {int(wf['y'].isna().sum()):,}장 있습니다. 입력을 확인하세요.")
     has_bad = bool(wf['bad'].notna().any())                 # G · B가 하나도 없으면 y_value만으로 판정 (이때는 모든 웨이퍼 사용)
@@ -240,6 +241,7 @@ def build_data(loaded, cfg):
     lot_idx, lot_names = pd.factorize(lots)
     data = {'N': N, 'Y': Y, 'B': B, 'steps': steps, 'assign': assign, 'trackin': trackin, 'wafers': wafers,
             'lots': lots, 'lot_idx': lot_idx, 'n_lots': len(lot_names), 'parts': wf.loc[wafers, 'part'].fillna('').to_numpy(),
+            'wafer_ids': wf.loc[wafers, 'wafer_id'].to_numpy(),
             'bad': wf.loc[wafers, 'bad'].to_numpy(float),
             'value': wf.loc[wafers, 'y'].to_numpy(float), 'tk': tk_order, 't_base': np.datetime64(t_base, 'ns')}
     issues = int((loaded.quality['값'].drop(loaded.info_rows) > 0).sum())
