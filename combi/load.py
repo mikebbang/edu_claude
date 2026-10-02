@@ -11,6 +11,7 @@ REQUIRED = ['analysis_date', 'job_id', 'root_lot_id', 'lot_id', 'wafer_id', 'tki
             'step_seq', 'step_desc', 'eqp_id', 'chamber_id', 'ppid', 'y_value', 'good_bad', 'step_ord']
 USE = [c for c in REQUIRED if c not in ('analysis_date', 'job_id', 'lot_id', 'ppid')]
 GB_CODE = {'G': 0.0, 'B': 1.0}
+META = ['job_id', 'analysis_date']                 # 판정에는 쓰지 않고 실행 기록에만 보여 주는 컬럼
 
 
 def ord_label(o):
@@ -70,7 +71,9 @@ def read_raw(csv_path, cfg):
         raise ValueError(f'CSV에 없는 컬럼: {miss_cols}')
     # 컬럼마다 값 종류가 줄 수보다 훨씬 적어서 category로 읽으면 메모리가 약 10분의 1로 줄고, 공백 정리 · 변환도 고유값에만 하면 된다.
     # tkin_time은 줄마다 거의 달라서 문자열로 읽어 바로 시각으로 바꾼다
-    raw = pd.read_csv(csv_path, usecols=USE, dtype={**{c: 'category' for c in USE}, 'tkin_time': str})
+    raw = pd.read_csv(csv_path, usecols=USE + META, dtype={**{c: 'category' for c in USE + META}, 'tkin_time': str})
+    job = {c: sorted({str(v).strip() for v in raw[c].cat.categories}) for c in META}   # 실행 기록에 보여 줄 job_id · analysis_date
+    raw = raw.drop(columns=META)
     raw['t'] = pd.to_datetime(raw.pop('tkin_time'), errors='coerce')
     for c in USE:
         if c != 'tkin_time':
@@ -168,7 +171,7 @@ def read_raw(csv_path, cfg):
         step_desc=('step_desc', lambda s: ' / '.join(list(dict.fromkeys(s.dropna()))[:3]) + (' …' if s.nunique() > 3 else '')))
     step_map = step_map.sort_values('오더', ascending=False, kind='stable').rename(columns={'오더': 'Order 수', '오더_번호': 'Order 번호', 'step_seq': 'STEP SEQ'})
     return SimpleNamespace(wf=wf, h=h, h_n=h_n, n_value=n_value, has_bad=has_bad, keep=keep, quality=quality, info_rows=INFO_ROWS,
-                           so=so, step_map=step_map, n_gb_n=n_gb_n, n_gb_other=n_gb_other, warnings=warnings)
+                           so=so, step_map=step_map, n_gb_n=n_gb_n, n_gb_other=n_gb_other, warnings=warnings, job=job)
 
 
 def build_data(loaded, cfg):
@@ -243,5 +246,5 @@ def build_data(loaded, cfg):
     summary = {'wafers': N, 'n_gb_n': loaded.n_gb_n, 'n_gb_other': loaded.n_gb_other, 'n_excluded': len(loaded.n_value),
                'lots': data['n_lots'], 'steps': len(steps), 'step_seqs': int(loaded.so['step_seq'].nunique()),
                'orders': sum(len(s['seqs']) for s in steps), 'bad_rate': float(np.nanmean(data['bad'])) if B is not None else None,
-               'issues': issues}
+               'issues': issues, 'job_ids': loaded.job['job_id'], 'analysis_dates': loaded.job['analysis_date']}
     return data, summary

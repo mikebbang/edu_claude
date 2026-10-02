@@ -1,11 +1,12 @@
 'use strict';
-// 화면 동작: 파일 올리기 → Run(진행 상태) → funnel · 순위표(서로 연동) → 고른 순위의 상세
+// 화면 동작: 파일 올리기 → Run(진행 상태) → funnel · 순위표(서로 연동) → 고른 순위의 상세. 실행 기록에서 고르면 저장된 결과를 연다
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const S = {
   fileId: null, runId: null, res: null, rank: 0, hover: null, yMode: 'judg', pMode: 'judg', cMode: 'hi',
   det: null, sel: null, step: null, sort: { key: 'rank', dir: 1 }, fn: null,
+  runs: [], workers: 1, watch: 0, detSeq: 0, histTimer: null, histQ: '', defaults: null,
 };
 
 async function api(path, opts = {}) {
@@ -88,33 +89,77 @@ function settings() {
   };
 }
 
-const STAGE_FRAC = { queued: 0.02, read: 0.08, prepare: 0.22, analyze: 0.3, judge: 0.86, payload: 0.95 };
+const STAGE_FRAC = { queued: 0.01, start: 0.02, read: 0.08, prepare: 0.22, analyze: 0.3, judge: 0.86, payload: 0.95 };
 
 async function run() {
   if (!S.fileId) { status('먼저 raw.csv를 올리거나 최근 파일을 고르세요.', 'error'); return; }
   $('#run').disabled = true;
+  let r;
   try {
-    const { run_id: rid } = await post('/api/runs', { file_id: S.fileId, settings: settings() });
-    S.runId = rid;
-    for (;;) {
-      const st = await api(`/api/runs/${rid}`);
-      if (st.status === 'done') { status(''); await loadResult(); break; }
-      if (st.status === 'error') { status('실행 중 오류: ' + esc(st.error), 'error'); break; }
-      let frac = STAGE_FRAC[st.stage] ?? 0.5;
-      const m = /Order (\d+)개/.exec(st.text || '');
-      if (st.stage === 'analyze' && m) frac = Math.min(0.84, 0.3 + 0.09 * parseInt(m[1], 10));
-      const text = st.status === 'queued' && st.ahead ? `앞에 실행 ${st.ahead}개가 있어 기다리는 중` : st.text || '실행 중';
-      status(`${esc(text)} · ${st.elapsed}초<div class="bar"><i style="width:${frac * 100}%"></i></div>`);
-      await sleep(1000);
-    }
+    r = await post('/api/runs', { file_id: S.fileId, settings: settings() });
   } catch (e) {
     status(esc(e.message), 'error');
+    $('#run').disabled = false;
+    return;
   }
   $('#run').disabled = false;
+  await refreshRuns();
+  await openRun(r.run_id, r.reused ? '같은 파일 · 같은 설정으로 실행한 기록이 있어 저장된 결과를 열었습니다 (다시 계산하지 않음).' : '');
 }
 
-async function loadResult() {
-  S.res = await api(`/api/runs/${S.runId}/result`);
+// 실행 하나를 연다: 끝났으면 저장된 결과를 바로, 돌고 있으면 진행 상태를 보다가 끝나면 연다. 다른 실행을 열면 앞의 기다림은 멈춘다
+async function openRun(id, note = '') {
+  const token = ++S.watch;
+  S.runId = id;
+  setHash(id);
+  const v = S.runs.find((x) => x.id === id);
+  if (v) {
+    fillSettings(v.settings);
+    if (v.file_exists) pickFile(v.file_id, v.file_name);
+  }
+  renderHistory();
+  for (;;) {
+    let st;
+    try {
+      st = await api(`/api/runs/${id}`);
+    } catch (e) {
+      if (token === S.watch) { hideResults(); status(esc(e.message), 'error'); }
+      return;
+    }
+    if (token !== S.watch) return;
+    if (st.status === 'done') {
+      if (v && v.status !== 'done') refreshRuns();
+      await loadResult(id, token, note);
+      return;
+    }
+    hideResults();
+    if (st.status === 'error') {
+      status('실행 중 오류: ' + esc(st.error), 'error');
+      refreshRuns();
+      return;
+    }
+    let frac = STAGE_FRAC[st.stage] ?? 0.5;
+    const m = /Order (\d+)개/.exec(st.text || '');
+    if (st.stage === 'analyze' && m) frac = Math.min(0.84, 0.3 + 0.09 * parseInt(m[1], 10));
+    const text = st.status === 'queued' && st.ahead ? `앞에 실행 ${st.ahead}개가 끝나기를 기다리는 중 (동시에 ${S.workers}개까지 실행)` : st.text || '실행 중';
+    status(`${esc(text)} · ${st.seconds ?? 0}초<div class="bar"><i style="width:${frac * 100}%"></i></div>`);
+    await sleep(1000);
+    if (token !== S.watch) return;
+  }
+}
+
+async function loadResult(id, token, note = '') {
+  let res;
+  try {
+    res = await api(`/api/runs/${id}/result`);
+  } catch (e) {
+    if (token === S.watch) { hideResults(); status('결과를 불러오지 못했습니다: ' + esc(e.message), 'error'); }
+    return;
+  }
+  if (token !== S.watch) return;
+  status(note ? esc(note) : '');
+  S.res = res;
+  S.det = null;
   S.hover = null;
   S.rank = 0;
   S.sort = { key: 'rank', dir: 1 };
@@ -123,12 +168,161 @@ async function loadResult() {
   for (const b of $$('#yseg button[data-v=bad], #pseg button[data-v=bad]')) b.disabled = !hasBad;
   if (!hasBad && S.yMode === 'bad') setSeg('#yseg', (S.yMode = 'judg'));
   if (!hasBad && S.pMode === 'bad') setSeg('#pseg', (S.pMode = 'judg'));
-  $('#topnote').textContent = `${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
+  const job = (S.res.info.data.job_ids || [])[0];
+  $('#topnote').textContent = `${job ? job + ' · ' : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
   renderSummary();
   renderFunnel();
   renderRanking();
   if (S.res.ranking.length) await pickRank(0);
   else $('#detail').hidden = true;
+}
+
+function hideResults() {
+  S.res = null;
+  S.det = null;
+  $('#results').hidden = true;
+  $('#detail').hidden = true;
+  $('#topnote').textContent = 'raw.csv를 올리고 Run을 누르세요';
+}
+
+function setHash(id) {
+  history.replaceState(null, '', id ? '#run=' + id : location.pathname + location.search);
+}
+
+// ── 실행 기록 ───────────────────────────────────────────────────────────
+const ACTIVE = new Set(['queued', 'running']);
+const SET_TEXT = {
+  higher_is_worse: (v) => `Value ${v ? '클수록 나쁨' : '클수록 좋음'}`,
+  y_transform: (v) => `치우침 ${({ auto: '자동', rank: '순위로', log: '로그로' })[v] || '그대로'}`,
+  part_adjust: (v) => `part 맞춤 ${v === true ? '켬' : v === false ? '끔' : '뚜렷할 때만'}`,
+  part_min: (v) => `작은 part ${v}장 미만 묶기`,
+  rework: (v) => `재작업 ${v === 'first' ? '처음 줄' : '마지막 줄'}`,
+  spread_adjust: (v) => `퍼짐 보정 ${v ? '켬' : '끔'}`,
+  same_wafers: (v) => (v == null ? '같은 웨이퍼 안 묶음' : `같은 웨이퍼 ${Math.round(v * 100)}%`),
+  part_id: (v) => `part_id ${v || '전체'}`,
+  line_id: (v) => `line_id ${v || '전체'}`,
+  step_suffix: (v) => `STEP 이름 규칙 ${v || '없음'}`,
+};
+const two = (n) => String(n).padStart(2, '0');
+const when = (sec, full) => {
+  const t = new Date(sec * 1000);
+  return (full ? t.getFullYear() + '-' : '') + `${two(t.getMonth() + 1)}-${two(t.getDate())} ${two(t.getHours())}:${two(t.getMinutes())}`;
+};
+const dur = (s) => (s == null ? '' : s < 60 ? `${Math.round(s)}초` : `${Math.floor(s / 60)}분 ${Math.round(s % 60)}초`);
+
+function settingsText(st) {
+  const extra = Object.keys(SET_TEXT).filter((k) => S.defaults && JSON.stringify(st[k]) !== JSON.stringify(S.defaults[k])).map((k) => SET_TEXT[k](st[k]));
+  return { main: `MIN_N ${st.min_n} · MAX_DEPTH ${st.max_depth ?? '제한 없음'}`, extra: extra.join(' · ') };
+}
+
+function fillSettings(st) {
+  const set = (id, v) => { $('#' + id).value = v; };
+  set('min_n', st.min_n);
+  $('#no_limit').checked = st.max_depth == null;
+  $('#max_depth').disabled = st.max_depth == null;
+  if (st.max_depth != null) set('max_depth', st.max_depth);
+  set('higher_is_worse', String(st.higher_is_worse));
+  set('y_transform', st.y_transform ?? '');
+  set('part_adjust', String(st.part_adjust));
+  set('part_min', st.part_min);
+  set('rework', st.rework);
+  set('spread_adjust', String(st.spread_adjust));
+  set('same_wafers', st.same_wafers == null ? '' : Math.round(st.same_wafers * 100));
+  set('part_id', st.part_id ?? '');
+  set('line_id', st.line_id ?? '');
+  set('step_suffix', st.step_suffix ?? '');
+}
+
+function pickFile(id, name) {
+  const sel = $('#recent');
+  if (![...sel.options].some((o) => o.value === id)) {
+    if (!sel.options[0] || sel.options[0].value === '') sel.innerHTML = '';
+    sel.insertAdjacentHTML('beforeend', `<option value="${esc(id)}">${esc(name || id)}</option>`);
+  }
+  sel.value = id;
+  S.fileId = id;
+}
+
+// 목록 새로 읽기. 누가 돌리는 실행이 있으면 2초, 없으면 15초마다 (화면을 안 보고 있을 때 저절로 읽는 것은 건너뜀)
+async function refreshRuns(auto = false) {
+  clearTimeout(S.histTimer);
+  let ok = false;
+  if (!auto || !document.hidden) {
+    try {
+      const r = await api('/api/runs');
+      S.runs = r.runs;
+      S.workers = r.workers;
+      S.defaults = r.defaults;
+      renderHistory();
+      ok = true;
+    } catch {
+      // 목록을 못 읽으면 다음 차례에 다시
+    }
+  }
+  S.histTimer = setTimeout(() => refreshRuns(true), S.runs.some((v) => ACTIVE.has(v.status)) ? 2000 : 15000);
+  return ok;
+}
+
+function resultCell(v) {
+  if (v.status === 'done') {
+    return `혐의 대상 <b>${fmt.int(v.targets)}</b>개 · ${fmt.int(v.wafers)}장 · ${dur(v.seconds)}${v.old ? '<span class="tag" title="판정 코드가 바뀌기 전에 계산한 결과">이전 코드</span>' : ''}`;
+  }
+  if (v.status === 'running') return `<span class="live"></span>실행 중 · ${esc(v.text)} · ${dur(v.seconds)}`;
+  if (v.status === 'queued') return `<span class="live"></span>${v.ahead ? `대기 중 · 앞에 ${v.ahead}개` : '시작하는 중'}`;
+  return `<span class="errtxt">오류</span><div class="note err" title="${esc(v.error || '')}">${esc(v.error || '')}</div>`;
+}
+
+function renderHistory() {
+  const q = S.histQ.trim().toLowerCase();
+  const hay = (v) => [...(v.job_ids || []), ...(v.analysis_dates || []), v.file_name || ''].join(' ').toLowerCase();
+  const rows = q ? S.runs.filter((v) => hay(v).includes(q)) : S.runs;
+  $('#hist-sub').textContent = S.runs.length ? `${S.runs.length}개 · 고르면 다시 계산하지 않고 저장된 결과를 엽니다 · 모든 사용자가 함께 보는 목록` : '';
+  if (!rows.length) {
+    $('#history').innerHTML = `<div class="empty muted">${S.runs.length ? '찾는 기록이 없습니다.' : '아직 실행 기록이 없습니다. raw.csv를 올리고 Run을 누르면 여기에 남습니다.'}</div>`;
+    return;
+  }
+  const body = rows.map((v) => {
+    const st = settingsText(v.settings);
+    const jobs = v.job_ids || [];
+    const dates = v.analysis_dates || [];
+    const many = (a) => (a.length ? esc(a[0]) + (a.length > 1 ? ` <span class="muted">외 ${a.length - 1}개</span>` : '') : '<span class="muted">–</span>');
+    const busy = ACTIVE.has(v.status);
+    return `<tr data-id="${esc(v.id)}"${v.id === S.runId ? ' class="on"' : ''}>
+      <td class="l nowrap" title="${when(v.created, true)}">${when(v.created)}</td>
+      <td class="l path" title="${esc(jobs.join(', '))}">${many(jobs)}</td>
+      <td class="l nowrap" title="${esc(dates.join(', '))}">${many(dates)}</td>
+      <td class="l"><div class="fname">${esc(v.file_name || v.file_id)}</div>${v.file_exists ? '' : '<div class="note">올린 파일이 지워져 다시 계산은 못 함</div>'}</td>
+      <td class="l">${esc(st.main)}${st.extra ? `<div class="note">${esc(st.extra)}</div>` : ''}</td>
+      <td class="l">${resultCell(v)}</td>
+      <td><button type="button" class="ghost del" data-del="${esc(v.id)}" title="${busy ? '계산을 멈추고 기록 삭제' : '기록 삭제'}">삭제</button></td>
+    </tr>`;
+  }).join('');
+  $('#history').innerHTML = `<table class="rank hist"><thead><tr><th class="l">Run time</th><th class="l">job_id</th><th class="l">analysis_date</th>
+    <th class="l">File</th><th class="l">Settings</th><th class="l">Result</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function removeRun(id) {
+  const v = S.runs.find((x) => x.id === id);
+  if (!v) return;
+  const what = `${(v.job_ids || [])[0] || v.file_name || v.file_id} · ${when(v.created, true)} 실행`;
+  const msg = ACTIVE.has(v.status)
+    ? `돌고 있는 판정을 멈추고 이 기록을 지울까요?\n${what}`
+    : `이 실행 기록을 지울까요? 서버에 저장된 결과도 지워져 되돌릴 수 없습니다.\n${what}`;
+  if (!confirm(msg)) return;
+  try {
+    await api(`/api/runs/${id}`, { method: 'DELETE' });
+  } catch (e) {
+    status('지우지 못했습니다: ' + esc(e.message), 'error');
+    return;
+  }
+  if (S.runId === id) {
+    S.watch++;
+    S.runId = null;
+    setHash(null);
+    hideResults();
+    status('실행 기록을 지웠습니다.');
+  }
+  await refreshRuns();
 }
 
 function setSeg(sel, v) {
@@ -144,7 +338,10 @@ function renderSummary() {
   if (j.spread > 1) notes.push(`z가 이론보다 ${j.spread.toFixed(2)}배 퍼짐 → 기준선도 ${j.spread.toFixed(2)}배로`);
   const st = I.settings;
   const groups = j.groups.map((g) => `<tr><td>Order ${esc(g.name)}</td><td>${fmt.int(g.possible)}</td><td>${g.z == null ? '–' : g.z.toFixed(2)}</td><td>${g.z_spread == null ? '–' : g.z_spread.toFixed(2)}</td></tr>`).join('');
+  const v = S.runs.find((x) => x.id === S.runId);
+  const jobs = d.job_ids || [];
   $('#summary').innerHTML = [
+    `<div><b>실행</b> job_id ${jobs.length ? esc(jobs.join(', ')) : '–'} · analysis_date ${esc((d.analysis_dates || []).join(', ') || '–')}${v ? ` · ${esc(v.file_name || '')} · ${when(v.created, true)} 실행` : ''}</div>`,
     `<div><b>데이터</b> 웨이퍼 ${fmt.int(d.wafers)}장${d.n_excluded ? ` (good_bad N 등 ${fmt.int(d.n_excluded)}장은 계산에서 뺌)` : ''} · lot ${fmt.int(d.lots)}개 · STEP ${fmt.int(d.steps)}개 (STEP SEQ ${fmt.int(d.step_seqs)}개)${d.bad_rate != null ? ` · bad 비율 ${fmt.pct(d.bad_rate)}` : ''}</div>`,
     `<div><b>보정</b> ${notes.length ? esc(notes.join(' · ')) : '필요 없음'}</div>`,
     `<div><b>판정</b> 조합 ${fmt.int(j.combos)}개 검사 (가능한 ${fmt.int(j.possible)}개 중) → 기준선 밖 ${fmt.int(j.over)}개 → 혐의 대상 ${fmt.int(j.targets)}개 · ${I.timings.total}초</div>`,
@@ -315,6 +512,16 @@ function renderRanking() {
 }
 
 // ── 상세 ───────────────────────────────────────────────────────────────
+// 표 안에서만 스크롤해 줄을 보이게 한다 (페이지 전체는 움직이지 않음)
+function scrollInto(wrap, tr) {
+  const head = $('thead', wrap);
+  const w = wrap.getBoundingClientRect();
+  const r = tr.getBoundingClientRect();
+  const top = w.top + (head ? head.offsetHeight : 0);
+  if (r.top < top) wrap.scrollTop -= top - r.top;
+  else if (r.bottom > w.bottom) wrap.scrollTop += r.bottom - w.bottom;
+}
+
 async function pickRank(i) {
   if (!S.res.ranking.length) return;
   S.rank = Math.max(0, Math.min(S.res.ranking.length - 1, i));
@@ -324,13 +531,17 @@ async function pickRank(i) {
   renderRanking();
   drawMarks();
   const tr = $(`#ranking tr[data-i="${S.rank}"]`);
-  if (tr) tr.scrollIntoView({ block: 'nearest' });
+  if (tr) scrollInto($('#ranking'), tr);
   await loadDetail();
 }
 
 async function loadDetail() {
+  const rid = S.runId;
+  const seq = ++S.detSeq;
   try {
-    S.det = await post(`/api/runs/${S.runId}/detail`, { step: S.step, items: S.sel });
+    const det = await post(`/api/runs/${rid}/detail`, { step: S.step, items: S.sel });
+    if (rid !== S.runId || seq !== S.detSeq || !S.res) return;
+    S.det = det;
     $('#detail').hidden = false;
     renderDetail();
   } catch (e) {
@@ -646,6 +857,14 @@ function init() {
     $('#adv-ico').textContent = adv.hidden ? '▾' : '▴';
   });
   $('#run').addEventListener('click', run);
+  $('#history').addEventListener('click', (e) => {
+    const del = e.target.closest('[data-del]');
+    if (del) { removeRun(del.dataset.del); return; }
+    const tr = e.target.closest('tbody tr[data-id]');
+    if (tr && (tr.dataset.id !== S.runId || !S.res)) openRun(tr.dataset.id);
+  });
+  $('#hist-q').addEventListener('input', (e) => { S.histQ = e.target.value; renderHistory(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRuns(); });   // 다시 보면 바로 새로 읽음
   for (const [sel, key, draw] of [['#yseg', 'yMode', () => renderFunnel()], ['#pseg', 'pMode', () => renderPeers()], ['#cseg', 'cMode', () => { renderScatter(); }]]) {
     $(sel).addEventListener('click', (e) => {
       const b = e.target.closest('button');
@@ -717,7 +936,13 @@ function init() {
   });
   $('#peers').addEventListener('mousemove', peerTip);
   $('#peers').addEventListener('mouseleave', hideTip);
-  loadFiles().catch((e) => status('파일 목록을 읽지 못했습니다: ' + esc(e.message), 'error'));
+  loadFiles().catch((e) => status('파일 목록을 읽지 못했습니다: ' + esc(e.message), 'error'))
+    .then(() => refreshRuns())
+    .then((ok) => {
+      const m = /^#run=([0-9a-f]+)$/.exec(location.hash);        // 주소에 실행 id가 있으면 그 기록을 연다 (링크 공유)
+      if (m && S.runs.some((v) => v.id === m[1])) openRun(m[1]);
+      else if (m && ok) setHash(null);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', init);

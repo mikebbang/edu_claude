@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>공정 조합 퍼널</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -37,6 +38,14 @@
       <span class="field"><label for="step_suffix">STEP 이름 규칙</label><input id="step_suffix" type="text" value="_(\d+)$"></span>
     </div>
     <div id="status" class="status" hidden></div>
+  </section>
+
+  <section class="card" aria-label="실행 기록">
+    <div class="card-head">
+      <h2>History</h2><span class="muted small" id="hist-sub"></span><span class="grow"></span>
+      <input id="hist-q" type="search" placeholder="job_id · 파일 이름 찾기" aria-label="실행 기록 찾기">
+    </div>
+    <div class="table-wrap hist-wrap" id="history" aria-label="실행 기록 목록"><div class="empty muted">불러오는 중…</div></div>
   </section>
 
   <section id="results" hidden>

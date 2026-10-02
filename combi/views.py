@@ -1,5 +1,6 @@
 """웹 화면에 보낼 값: 결과 요약 · funnel 점과 경계선 · 순위표 · 상세(선택 경로 · 같은 Order 다른 경로 · 웨이퍼)"""
 import math
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -123,15 +124,12 @@ def run_payload(result):
                        'bounds': _bounds(sc, zk[1] * s, _grid(lo_n, hi_n))}}
 
 
-def compact(result):
-    """상세 계산에 필요 없는 조합 목록을 버려 메모리를 줄인다 (순위표의 혐의 대상과 한 줄로 묶인 대상만 남김)"""
-    r = result.res
-    keys = {c['key'] for c in result.ranked['top']} | set(result.ranked['same_as'])
-    r['by_key'] = {k: r['by_key'][k] for k in keys if k in r['by_key']}
-    r['combos'] = list(r['by_key'].values())
-    r.pop('over_index', None)
-    for k in ('by_target', 'over'):
-        result.ranked.pop(k, None)
+def detail_state(result):
+    """상세 계산에 필요한 것만 추린 결과 (실행 기록으로 저장해 두었다가 다시 불러온다). detail_payload에 그대로 넣는다"""
+    d, r = result.data, result.res
+    keep = ('N', 'Y', 'B', 'bad', 'value', 'steps', 'assign', 'tk', 't_base', 'part_idx', 'part_sig', 'bad_exp')
+    return SimpleNamespace(data={k: d[k] for k in keep if k in d}, res={k: r[k] for k in ('mu', 'sd', 'N', 'r', 'p0', 'signals')},
+                           zk=list(result.zk), spread=result.spread, cfg=result.cfg)
 
 
 def detail_payload(result, step, items):

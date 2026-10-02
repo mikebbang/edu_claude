@@ -81,6 +81,21 @@ table.rank .step { color: var(--ink2); }
 table.rank tr.on .step { color: inherit; opacity: 0.8; }
 table.rank .path { font-weight: 500; word-break: break-all; }
 table.rank .note { color: var(--ink2); font-size: 11px; margin-top: 2px; }
+.hist-wrap { max-height: 236px; }
+table.hist th { cursor: default; }
+table.hist td { vertical-align: middle; }
+table.hist .nowrap { white-space: nowrap; }
+table.hist .fname { word-break: break-all; }
+table.hist .err { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.hist .del { height: 24px; padding: 0 8px; font-size: 12px; }
+table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
+#hist-q { width: 210px; }
+.empty { padding: 14px 4px; }
+.tag { display: inline-block; padding: 0 6px; border-radius: 8px; background: var(--hover); color: var(--warn); font-size: 11px; margin-left: 6px; }
+.errtxt { color: var(--bad); font-weight: 600; }
+.live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; animation: pulse 0.9s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .live { animation: none; } }
 .detail-head { display: flex; align-items: center; gap: 6px; }
 .dh { flex: 1; }
 .dh .t { font-size: 15px; font-weight: 600; }
