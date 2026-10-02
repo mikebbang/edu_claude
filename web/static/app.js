@@ -11,9 +11,9 @@ const PANEL_MAX = 8;                 // 상세 카드를 한 번에 그리는 �
 const S = {
   view: null, fileId: null, runId: null, res: null, hover: null, yMode: 'judg', sort: { key: 'rank', dir: 1 }, fn: null,
   brush: null, brushed: false, hintTimer: null,
-  picks: [], focus: null, panels: new Map(), ptSize: 2.8,
+  picks: [], focus: null, panels: new Map(), ptSize: 4.5, files: [],
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
-  db: false, source: 'file', srcInit: false,          // db = 서버에 DB 접속 정보가 있는지 · source = Run에 쓸 데이터 (job | file)
+  db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 raw.csv로만)
   home: { items: [], at: -1, mode: null, q: '', db: false },
 };
 
@@ -54,13 +54,8 @@ const hideTip = () => { $('#tip').hidden = true; };
 
 // ── 파일 ───────────────────────────────────────────────────────────────
 async function loadFiles(selectId) {
-  const files = await api('/api/files');
-  const sel = $('#recent');
-  sel.innerHTML = files.length
-    ? files.map((f) => `<option value="${esc(f.id)}">${esc(f.name)} · ${(f.size / 1e6).toFixed(0)}MB · ${esc(f.uploaded.replace('T', ' ').slice(5, 16))}</option>`).join('')
-    : '<option value="">올린 파일 없음</option>';
-  if (selectId) sel.value = selectId;
-  S.fileId = sel.value || null;
+  S.files = await api('/api/files');
+  if (selectId) attachFile(selectId);
 }
 
 function upload(file, onProgress) {
@@ -104,31 +99,36 @@ function settings() {
 const STAGE_FRAC = { queued: 0.01, start: 0.02, fetch: 0.04, read: 0.08, prepare: 0.22, analyze: 0.3, judge: 0.86, payload: 0.95 };
 const JOB_RE = /^\d{1,18}$/;
 
-// Run에 쓸 데이터: 'job' = Job ID로 DB에서 가져오기 · 'file' = 올린 raw.csv
-function setSource(mode, jid) {
-  if (mode === 'job' && !S.db) mode = 'file';
-  S.source = mode;
-  setSeg($('#srcseg'), mode);
-  $('#src-job').hidden = mode !== 'job';
-  $('#src-file').hidden = mode !== 'file';
+// Run에 쓸 데이터: 왼쪽 csv로 붙인 raw.csv가 있으면 그 파일, 없으면 Job ID로 DB에서 가져온다
+function attachFile(id, name) {
+  const f = S.files.find((x) => x.id === id);
+  S.fileId = id;
+  $('#q-file-name').textContent = (f ? f.name : name || id) + (f ? ` · ${(f.size / 1e6).toFixed(0)}MB` : '');
+  $('#q-file').hidden = false;
+  $('#job_id').hidden = true;
+}
+
+function detachFile(jid) {
+  S.fileId = null;
+  $('#q-file').hidden = true;
+  $('#job_id').hidden = false;
   if (jid != null) $('#job_id').value = jid;
 }
 
-function syncDb() {                                   // 서버에 DB 접속 정보가 없으면 Job ID는 못 고르게
-  const b = $('#srcseg button[data-v=job]');
-  b.disabled = !S.db;
-  b.title = S.db ? '' : '서버에 DB 접속 정보(COMBI_DB_URL)가 없어 Job ID로는 가져올 수 없습니다';
+function syncDb() {                                   // 서버에 DB 접속 정보가 없으면 Job ID 칸을 막고 raw.csv로 안내
+  const inp = $('#job_id');
+  inp.disabled = !S.db;
+  inp.placeholder = S.db ? 'Job ID를 입력하세요 (예: 2281935)' : '서버에 DB 접속 정보가 없습니다 · 왼쪽 csv로 raw.csv를 올리세요';
   const note = $('#src-note');
   note.hidden = S.db;
-  note.textContent = S.db ? '' : '서버에 DB 접속 정보가 없어 지금은 raw.csv 파일로만 분석할 수 있습니다 (관리자: 서버의 .env에 COMBI_DB_URL).';
-  if (!S.srcInit) { S.srcInit = true; setSource(S.db ? 'job' : 'file'); } else if (!S.db && S.source === 'job') setSource('file');
+  note.textContent = S.db ? '' : 'Job ID로 가져오려면 관리자가 서버의 .env에 COMBI_DB_URL을 넣어야 합니다. 지금은 raw.csv로 분석할 수 있습니다.';
 }
 
 async function run() {
-  const job = S.source === 'job';
+  const job = !S.fileId;
   const jid = $('#job_id').value.trim();
-  if (job && !JOB_RE.test(jid)) { status('Job ID는 숫자만 넣으세요 (예: 2281935).', 'error'); $('#job_id').focus(); return; }
-  if (!job && !S.fileId) { status('먼저 raw.csv를 올리거나 올린 파일을 고르세요.', 'error'); return; }
+  if (job && !S.db) { status('왼쪽 csv로 raw.csv를 올려 주세요. 서버에 DB 접속 정보가 없어 Job ID로는 가져올 수 없습니다.', 'error'); return; }
+  if (job && !JOB_RE.test(jid)) { status('Job ID를 숫자로 넣거나(예: 2281935) 왼쪽 csv로 raw.csv를 올려 주세요.', 'error'); $('#job_id').focus(); return; }
   $('#run').disabled = true;
   let r;
   try {
@@ -164,6 +164,7 @@ function route() {
   if (!m && S.runId) {                       // #analysis: 고른 실행 없이 설정 · 실행 기록만
     S.watch++;
     S.runId = null;
+    hideLoader();
     hideResults();
     renderHistory();
   }
@@ -185,16 +186,18 @@ async function openRun(id, note = '', push = true) {
   const v = S.runs.find((x) => x.id === id);
   if (v) {
     fillSettings(v.settings);
-    if (v.file_exists) { setSource('file'); pickFile(v.file_id, v.file_name); }    // DB에서 가져온 실행도 다시 돌릴 때는 가져온 raw.csv를 쓴다
-    else if (v.job_source) setSource('job', v.job_source);
+    if (v.file_exists) attachFile(v.file_id, v.file_name);   // DB에서 가져온 실행도 다시 돌릴 때는 가져온 raw.csv를 쓴다
+    else if (v.job_source) detachFile(v.job_source);
   }
   renderHistory();
+  hideLoader();
   for (;;) {
     let st;
     try {
       st = await api(`/api/runs/${id}`);
     } catch (e) {
       if (token === S.watch) {
+        hideLoader();
         hideResults();
         status(esc(e.message), 'error');
         S.runId = null;
@@ -206,13 +209,18 @@ async function openRun(id, note = '', push = true) {
     if (token !== S.watch) return;
     if (st.status === 'done') {
       if (v && v.status !== 'done') refreshRuns();
+      hideLoader();
+      if (st.job_source && st.file_exists && S.fileId !== st.file_id) {
+        try { await loadFiles(st.file_id); } catch { /* 파일 목록을 못 읽어도 결과는 연다 */ }   // DB에서 가져온 raw.csv를 붙여 두어 설정만 바꿔 다시 돌릴 때는 DB에 다시 묻지 않는다
+      }
       await loadResult(id, token, note);
       return;
     }
     hideResults();
     if (st.status === 'error') {
+      hideLoader();
       if (st.no_data) {                                  // DB에 없으면 raw.csv를 올려서 분석
-        setSource('file');
+        detachFile();
         status(`${esc(st.error)} <button type="button" class="mini" data-act="upload">raw.csv 올리기</button>`, 'error');
       } else status('실행 중 오류: ' + esc(st.error), 'error');
       refreshRuns();
@@ -222,7 +230,8 @@ async function openRun(id, note = '', push = true) {
     const m = /Order (\d+)개/.exec(st.text || '');
     if (st.stage === 'analyze' && m) frac = Math.min(0.84, 0.3 + 0.09 * parseInt(m[1], 10));
     const text = st.status === 'queued' && st.ahead ? `앞에 실행 ${st.ahead}개가 끝나기를 기다리는 중 (동시에 ${S.workers}개까지 실행)` : st.text || '실행 중';
-    status(`${esc(text)} · ${st.seconds ?? 0}초<div class="bar"><i style="width:${frac * 100}%"></i></div>`);
+    status('');
+    showLoader(text, st.seconds, frac);
     await sleep(1000);
     if (token !== S.watch) return;
   }
@@ -323,15 +332,6 @@ function fillSettings(st) {
   set('step_suffix', st.step_suffix ?? '');
 }
 
-function pickFile(id, name) {
-  const sel = $('#recent');
-  if (![...sel.options].some((o) => o.value === id)) {
-    if (!sel.options[0] || sel.options[0].value === '') sel.innerHTML = '';
-    sel.insertAdjacentHTML('beforeend', `<option value="${esc(id)}">${esc(name || id)}</option>`);
-  }
-  sel.value = id;
-  S.fileId = id;
-}
 
 // 목록 새로 읽기. 누가 돌리는 실행이 있으면 2초, 없으면 15초마다 (화면을 안 보고 있을 때 저절로 읽는 것은 건너뜀)
 async function refreshRuns(auto = false) {
@@ -411,6 +411,7 @@ async function removeRun(id) {
     S.watch++;
     S.runId = null;
     setHash(null);
+    hideLoader();
     hideResults();
     status('실행 기록을 지웠습니다.');
   }
@@ -792,7 +793,7 @@ function makePanel(sp) {
   size.value = S.ptSize;
   size.addEventListener('input', () => {             // 점 크기는 모든 카드에 같이
     S.ptSize = +size.value;
-    store.set('uc.ptSize', S.ptSize);
+    store.set('uc.ptSize2', S.ptSize);
     for (const q of S.panels.values()) {
       if (q !== p) $('[data-a=size]', q.el).value = S.ptSize;
       if (q.det) renderScatter(q);
@@ -1144,6 +1145,57 @@ function renderCompare(p) {
   el.innerHTML = s;
 }
 
+// ── 로딩 장면: 픽셀 칩 캐릭터가 걷고, 줄무늬 구름과 땅이 흘러간다 (계산 · DB 가져오기 중) ─────────
+// 칸 하나 = 픽셀 하나. B 몸 · D 그늘 · E 눈 · K 1번 핀 표시 · P 핀 · L 다리
+const CRITTER_STAND = ['..............', '..............', '...BBBBBBBD...', '.PPBKBBBBBDPP.', '...BBEBBEBD...',
+  '.PPBBBBBBBDPP.', '...BBBBBBBD...', '...BBBBBBBD...', '....LL..LL....', '....LL..LL....'];
+const CRITTER_UP_L = ['..............', '...BBBBBBBD...', '.PPBKBBBBBDPP.', '...BBEBBEBD...', '.PPBBBBBBBDPP.',
+  '...BBBBBBBD...', '...BBBBBBBD...', '....LL..LL....', '........LL....', '........LL....'];
+const CRITTER_UP_R = ['..............', '...BBBBBBBD...', '.PPBKBBBBBDPP.', '...BBEBBEBD...', '.PPBBBBBBBDPP.',
+  '...BBBBBBBD...', '...BBBBBBBD...', '....LL..LL....', '....LL........', '....LL........'];
+const CLOUD_A = ['..........######....', '.........#########..', '..####..###########.', '.##################.', '####################'];
+const CLOUD_B = ['.....####.....', '..#########...', '.############.', '##############'];
+
+// 픽셀 그림 → 같은 글자가 이어진 가로 줄마다 rect 하나
+function pixelRects(rows, cell, fill) {
+  let s = '';
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length;) {
+      const ch = row[x];
+      let w = 1;
+      while (row[x + w] === ch) w++;
+      if (ch !== '.') s += `<rect x="${x * cell}" y="${y * cell}" width="${w * cell}" height="${cell}" ${fill(ch)}/>`;
+      x += w;
+    }
+  });
+  return s;
+}
+
+function buildScene() {
+  const strip = (w, clouds) => `<svg width="${w}" height="52" viewBox="0 0 ${w} 52" shape-rendering="crispEdges">`
+    + clouds.map(([shape, x, y]) => `<g transform="translate(${x} ${y})">${pixelRects(shape, 4, () => 'fill="url(#uc-hatch)"')}</g>`).join('') + '</svg>';
+  const layer = (cls, w, clouds) => `<div class="clouds ${cls}">${strip(w, clouds).repeat(5)}</div>`;
+  const frames = [CRITTER_STAND, CRITTER_UP_L, CRITTER_STAND, CRITTER_UP_R]
+    .map((f, i) => `<g class="f f${i + 1}">${pixelRects(f, 1, (ch) => `class="px-${ch}"`)}</g>`).join('');
+  $('#scene').innerHTML = '<svg width="0" height="0" style="position:absolute"><defs><pattern id="uc-hatch" width="2" height="3" patternUnits="userSpaceOnUse">'
+    + '<rect width="1" height="3" class="hatch"/></pattern></defs></svg>'
+    + layer('far', 560, [[CLOUD_B, 40, 6], [CLOUD_A, 300, 0]])
+    + layer('near', 700, [[CLOUD_A, 110, 8], [CLOUD_B, 460, 20]])
+    + '<div class="ground"></div>'
+    + `<svg class="critter" viewBox="0 0 14 10" shape-rendering="crispEdges">${frames}</svg>`;
+}
+
+function showLoader(text, sec, frac) {
+  $('#loader').hidden = false;
+  $('#loader-text').textContent = text;
+  $('#loader-time').textContent = sec != null ? ` · ${Math.round(sec)}초` : '';
+  $('#loader-bar').style.width = `${Math.round(frac * 100)}%`;
+}
+
+function hideLoader() {
+  $('#loader').hidden = true;
+}
+
 // ── 시작 화면 ─────────────────────────────────────────────────────────
 function homeMsg(html, cls = '') {
   const e = $('#home-msg');
@@ -1219,7 +1271,7 @@ async function homeFetch(jid) {
     const r = await post('/api/jobs', { job_id: jid, settings: {} });
     homeMsg('');
     await refreshRuns();
-    setSource('job', jid);
+    detachFile(jid);
     go('#run=' + r.run_id);
   } catch (e) {
     homeMsg(esc(e.message), 'error');
@@ -1369,8 +1421,8 @@ function bindFunnel() {
 
 function init() {
   readColors();
-  S.ptSize = store.get('uc.ptSize', 2.8);
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); rerender(); });
+  S.ptSize = store.get('uc.ptSize2', 4.5);
+  document.addEventListener('uc-theme', () => { readColors(); rerender(); });   // 밝은 · 어두운 화면을 바꾸면 차트 색을 다시 읽어 그린다
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(rerender, 150); });
   window.addEventListener('hashchange', route);
   window.addEventListener('popstate', route);
@@ -1386,7 +1438,6 @@ function init() {
     }
     e.target.value = '';
   });
-  $('#recent').addEventListener('change', (e) => { S.fileId = e.target.value || null; });
   $('#no_limit').addEventListener('change', (e) => { $('#max_depth').disabled = e.target.checked; });
   $('#adv-btn').addEventListener('click', () => {
     const adv = $('#adv');
@@ -1395,14 +1446,10 @@ function init() {
     $('#adv-ico').textContent = adv.hidden ? '▾' : '▴';
   });
   $('#run').addEventListener('click', run);
-  $('#srcseg').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b || b.disabled) return;
-    setSource(b.dataset.v);
-    if (S.source === 'job') $('#job_id').focus();
-  });
+  $('#csv-btn').addEventListener('click', () => $('#file').click());
+  $('#q-file-x').addEventListener('click', () => { detachFile(); $('#job_id').focus(); });
   $('#job_id').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
-  $('#status').addEventListener('click', (e) => { if (e.target.closest('[data-act=upload]')) { setSource('file'); $('#file').click(); } });
+  $('#status').addEventListener('click', (e) => { if (e.target.closest('[data-act=upload]')) $('#file').click(); });
   $('#top-history').addEventListener('click', () => {
     $('#history-card').scrollIntoView({ behavior: smooth(), block: 'start' });
     $('#hist-q').focus({ preventScroll: true });
@@ -1418,6 +1465,7 @@ function init() {
   bindFunnel();
   bindRanking();
   bindHome();
+  buildScene();
   loadFiles().catch((e) => status('파일 목록을 읽지 못했습니다: ' + esc(e.message), 'error'))
     .then(() => refreshRuns())
     .then((ok) => {

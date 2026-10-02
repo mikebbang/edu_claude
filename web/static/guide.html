@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>사용자 가이드 · UNIT_COMMONALITY</title>
 <link rel="icon" href="data:,">
+<link rel="preload" href="fonts/Poppins-ExtraBold.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
 <style>
   .guide { max-width: 860px; margin: 0 auto; padding: 18px 20px 60px; font-size: 14px; line-height: 1.7; }
   .guide h1 { font-size: 22px; margin: 18px 0 4px; }
@@ -25,6 +27,10 @@
   <span class="muted">사용자 가이드</span>
   <span class="grow"></span>
   <a class="toplink" href="./#analysis">분석 화면으로</a>
+  <button class="icon-btn theme-btn" type="button" data-theme-toggle title="어두운 화면으로" aria-label="어두운 화면으로">
+    <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg>
+    <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>
+  </button>
 </header>
 <main class="guide">
   <h1>사용자 가이드</h1>
@@ -39,14 +45,15 @@
     <li><b>왼쪽 CSV 버튼</b>: raw.csv를 올립니다. 다 올라가면 설정 화면으로 넘어가니 설정을 확인하고 Run을 누르세요.</li>
     <li><b>시계 버튼</b>: 최근 실행 8개를 보여 줍니다. 모든 사용자의 실행이 함께 나옵니다.</li>
     <li><b>책 버튼</b>: 이 안내입니다.</li>
+    <li><b>오른쪽 위 달 · 해 아이콘</b>: 밝은 화면과 어두운 화면을 바꿉니다. 고른 것은 이 브라우저에 기억됩니다(고르지 않으면 컴퓨터 설정을 따름).</li>
   </ul>
   <p>분석 화면 왼쪽 위의 <b>UNIT_COMMONALITY</b>를 누르면 시작 화면으로 돌아옵니다. 주소창 끝의 <code>#run=…</code>까지 복사해 보내면 받은 사람도 같은 결과를 엽니다.</p>
 
   <h2 id="run">실행 (분석 화면 위쪽)</h2>
   <ul>
-    <li><b>데이터</b>: 맨 위에서 <b>Job ID</b>(DB에서 가져오기) 또는 <b>raw.csv 파일</b>(올리거나 전에 올린 파일 고르기)을 고릅니다. DB에서 가져온 데이터도 <code>job_&lt;Job ID&gt;.csv</code>로 파일 목록에 남아, 설정만 바꿔 다시 돌릴 때는 DB에 다시 묻지 않습니다.</li>
+    <li><b>데이터</b>: 맨 위 한 줄에 Job ID를 넣거나, 왼쪽 <b>csv</b>를 눌러 raw.csv를 붙입니다. 붙인 파일이 있으면 그 파일로, 없으면 Job ID로 DB에서 가져와 실행합니다. 붙인 파일은 ✕로 뺍니다. History에서 지난 실행을 열면 그 실행의 파일이 붙습니다(DB에서 가져온 데이터도 <code>job_&lt;Job ID&gt;.csv</code>로 남아, 설정만 바꿔 다시 돌릴 때는 DB에 다시 묻지 않습니다).</li>
     <li><b>MIN_N</b>: 조합에 필요한 최소 웨이퍼 수. <b>MAX_DEPTH</b>: 한 조합에 묶을 최대 Order 수("제한 없음" 가능). 나머지는 <b>고급 설정</b>에 있습니다.</li>
-    <li><b>Run</b>을 누르면 진행 막대가 나옵니다. 여러 사람이 동시에 눌러도 함께 돌고, 같은 파일 · 같은 설정으로 이미 돌린 기록이 있으면 그 결과를 엽니다.</li>
+    <li><b>Run</b>을 누르면 계산하는 동안 칩 캐릭터가 걷는 로딩 장면과 지금 단계 · 걸린 시간 · 진행 막대가 나옵니다. 여러 사람이 동시에 눌러도 함께 돌고, 같은 파일 · 같은 설정으로 이미 돌린 기록이 있으면 그 결과를 엽니다.</li>
     <li><b>History</b>: 돌린 실행이 모두 남습니다. 줄을 누르면 결과를 열고, <b>삭제</b>로 지웁니다(되돌릴 수 없음).</li>
   </ul>
 
@@ -79,7 +86,7 @@
   <h3>웨이퍼 산점도</h3>
   <ul>
     <li>점 하나 = 웨이퍼 하나. 가로 = 고른 Order 중 마지막 Order의 tkin_time, 세로 = y_value.</li>
-    <li><b>선택 경로 강조</b>(빨강 vs 회색) 또는 <b>조합별 색</b>(고른 Order들의 Unit 조합마다 색). <b>점 크기</b> 막대로 점을 키우거나 줄입니다(모든 카드에 같이 적용되고 이 브라우저에 기억됩니다).</li>
+    <li><b>선택 경로 강조</b>(빨강 vs 회색) 또는 <b>조합별 색</b>(고른 Order들의 Unit 조합마다 색). <b>점 크기</b> 막대로 점을 키우거나 줄입니다(처음 4.5, 모든 카드에 같이 적용되고 이 브라우저에 기억됩니다).</li>
   </ul>
   <h3>같은 Order 다른 경로 비교</h3>
   <p>점 하나 = 같은 Order들을 지난 다른 Unit 조합 하나. 띠 밖이면 웨이퍼 수를 감안해도 튀는 경로입니다. 지금 경로만 튀는지, 그 Order 전체가 흔들리는지 봅니다.</p>

@@ -10,18 +10,19 @@
   --brand: #0abab5; --brand-deep: #07857f; --pink: #ff1a8c;
   --shadow: 0 1px 2px #17233a0a, 0 12px 30px -20px #17233a33;
   --font: "Pretendard Variable", Inter, Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --scene-a: #f9fbfc; --scene-b: #eef2f5; --cloud: #9ba6b3; --px-pin: #b9c3ce; --px-shade: #07857f;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12161d; --card: #1b212b; --ink: #e6e9ef; --ink2: #aab3c2; --muted: #7d8695; --line: #2c3440; --line2: #3b4554;
-    --band: #232a35; --hover: #232a35; --accent: #4fd6d0; --accent-bg: #16302f; --accent-line: #24514e; --ring: #2ccdc7;
-    --primary: #2ccdc7; --primary-hover: #4fd6d0; --on-primary: #062321;
-    --bad: #e46262; --bad-bg: #3b2324; --good: #5b9be6; --warn: #d7a24a;
-    --brand: #2ccdc7; --brand-deep: #4fd6d0; --pink: #ff5aa8;
-    --shadow: 0 1px 2px #0000004d, 0 12px 30px -20px #000000b3;
-    color-scheme: dark;
-  }
+/* 어두운 화면: 오른쪽 위 아이콘으로 고르거나, 고르지 않았으면 운영체제 설정 (theme.js가 <html data-theme>를 정함) */
+:root[data-theme="dark"] {
+  --bg: #12161d; --card: #1b212b; --ink: #e6e9ef; --ink2: #aab3c2; --muted: #7d8695; --line: #2c3440; --line2: #3b4554;
+  --band: #232a35; --hover: #232a35; --accent: #4fd6d0; --accent-bg: #16302f; --accent-line: #24514e; --ring: #2ccdc7;
+  --primary: #2ccdc7; --primary-hover: #4fd6d0; --on-primary: #062321;
+  --bad: #e46262; --bad-bg: #3b2324; --good: #5b9be6; --warn: #d7a24a;
+  --brand: #2ccdc7; --brand-deep: #4fd6d0; --pink: #ff5aa8;
+  --shadow: 0 1px 2px #0000004d, 0 12px 30px -20px #000000b3;
+  --scene-a: #0f141b; --scene-b: #161c25; --cloud: #8a95a5; --px-pin: #8792a2; --px-shade: #0f8f89;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -49,6 +50,9 @@ button, input, select { font: inherit; color: inherit; }
 .icon-btn { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--ink2); background: transparent; border: 1px solid transparent; border-radius: 10px; }
 .icon-btn svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .icon-btn:hover, .icon-btn:focus-visible { color: var(--accent); background: var(--accent-bg); border-color: var(--accent-line); }
+.theme-btn .ico-sun { display: none; }
+[data-theme="dark"] .theme-btn .ico-sun { display: block; }
+[data-theme="dark"] .theme-btn .ico-moon { display: none; }
 .toplink { color: var(--ink2); text-decoration: none; font-size: 12px; }
 .toplink:hover { color: var(--accent); text-decoration: underline; }
 .page { max-width: 1480px; margin: 0 auto; padding: 18px 24px 48px; display: flex; flex-direction: column; gap: 14px; }
@@ -73,24 +77,61 @@ button.ghost { border-color: transparent; background: none; color: var(--ink2); 
 button.ghost:hover { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent); }
 button.ghost:disabled { opacity: 0.4; background: none; border-color: transparent; color: var(--ink2); }
 button.mini { height: 26px; padding: 0 10px; font-size: 12px; color: var(--accent); white-space: nowrap; }
-.file-btn { display: inline-flex; align-items: center; gap: 7px; height: 42px; padding: 0 16px; border: 1px dashed var(--line2); border-radius: 12px; cursor: pointer; color: var(--ink); transition: background-color .15s, border-color .15s, color .15s; }
-.file-btn svg { width: 17px; height: 17px; fill: none; stroke: var(--brand); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.file-btn input { display: none; }
-.file-btn:hover { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent); }
 /* 데이터: Job ID(DB) 또는 raw.csv 파일 */
-.src-row { gap: 10px 14px; }
-.src { display: inline-flex; align-items: center; gap: 10px; flex: 1; min-width: 280px; }
-.src .q-input { flex: 1; width: auto; max-width: 440px; height: 42px; border-radius: 12px; padding: 0 14px; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.src .q-input::placeholder { color: var(--muted); font-weight: 400; font-size: 14px; }
-.src select { height: 42px; border-radius: 12px; max-width: 360px; }
+/* 데이터 줄: 시작 화면 검색창과 같은 모양 (왼쪽 csv 칩 · 붙인 파일 · Job ID) */
+.qbar { display: flex; align-items: center; gap: 8px; height: 52px; padding: 5px 6px; max-width: 720px; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 1px 2px #17233a0a, 0 10px 26px -18px #17233a40; transition: border-color .15s; }
+.qbar:focus-within { border-color: var(--line2); }
+.q-chip { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px 0 10px; color: var(--ink2); background: var(--hover); border: 0; border-radius: 12px;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; flex: none; }
+.q-chip svg { width: 18px; height: 18px; fill: none; stroke: var(--brand); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.q-chip:hover, .q-chip:focus-visible { color: var(--accent); background: var(--accent-bg); }
+.qbar .q-text, .qbar .q-text:focus { flex: 1; min-width: 0; width: auto; height: 40px; padding: 0 8px; border: 0; box-shadow: none; background: transparent; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.qbar .q-text::placeholder { color: var(--muted); font-weight: 400; font-size: 14px; }
+.qbar .q-text:disabled { cursor: not-allowed; }
+.q-file { display: inline-flex; align-items: center; gap: 8px; min-width: 0; height: 38px; padding: 0 4px 0 12px; border-radius: 11px; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-line); font-weight: 600; }
+.q-file svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.q-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-x { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; flex: none; }
+.q-x:hover { background: var(--card); border: 0; color: var(--accent); }
 .opt-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .src-note { margin-top: 8px; }
-#recent { max-width: 360px; }
 .adv { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .adv .field { justify-content: space-between; }
 .status { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--hover); }
 .status.error { background: var(--bad-bg); color: var(--bad); white-space: pre-wrap; }
 .status .mini { margin-left: 8px; color: var(--bad); border-color: currentColor; background: var(--card); }
+/* 로딩: 픽셀 칩 캐릭터가 걷고(4장면을 번갈아), 줄무늬 구름 두 겹과 땅이 왼쪽으로 흘러간다 */
+.loader { margin-top: 12px; }
+.scene { position: relative; height: 112px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, var(--scene-a), var(--scene-b)); }
+.clouds { position: absolute; left: 0; display: flex; will-change: transform; animation: uc-drift 20s linear infinite; }
+.clouds svg { display: block; flex: none; }
+.clouds.far { top: 4px; opacity: .55; --strip: -560px; }
+.clouds.near { top: 18px; opacity: .95; --strip: -700px; animation-duration: 12s; }
+.hatch { fill: var(--cloud); }
+@keyframes uc-drift { from { transform: translateX(0); } to { transform: translateX(var(--strip, -560px)); } }
+.scene .ground { position: absolute; left: 0; right: 0; bottom: 12px; height: 2px; opacity: .8; background: repeating-linear-gradient(90deg, var(--cloud) 0 8px, transparent 8px 20px); animation: uc-ground .6s linear infinite; }
+@keyframes uc-ground { from { background-position: 0 0; } to { background-position: -20px 0; } }
+.critter { position: absolute; left: 50%; bottom: 14px; width: 84px; height: 60px; margin-left: -42px; overflow: visible; }
+.critter .f { opacity: 0; animation: uc-frame .6s steps(1, end) infinite; }
+.critter .f2 { animation-delay: -.45s; }
+.critter .f3 { animation-delay: -.3s; }
+.critter .f4 { animation-delay: -.15s; }
+@keyframes uc-frame { 0% { opacity: 1; } 25%, 100% { opacity: 0; } }
+.px-B { fill: var(--brand); }
+.px-D, .px-L { fill: var(--px-shade); }
+.px-E { fill: #17233a; }
+.px-K { fill: var(--pink); }
+.px-P { fill: var(--px-pin); }
+.loader-line { margin-top: 10px; font-size: 13px; font-weight: 500; }
+.shimmer { color: transparent; background: linear-gradient(90deg, var(--ink2) 0%, var(--ink2) 38%, var(--ink) 50%, var(--ink2) 62%, var(--ink2) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; animation: uc-shimmer 1.8s linear infinite; }
+@keyframes uc-shimmer { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .clouds, .scene .ground, .shimmer, .critter .f { animation: none; }
+  .critter .f1 { opacity: 1; }
+  .shimmer { color: var(--ink2); background: none; }
+}
 .bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 8px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--ring); transition: width .2s; }
 .summary { display: flex; flex-direction: column; gap: 3px; }
@@ -110,7 +151,6 @@ button.mini { height: 26px; padding: 0 10px; font-size: 12px; color: var(--accen
 .seg button.on { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
 .seg button:disabled { opacity: 0.4; background: none; color: var(--ink2); }
 .seg.small button { height: 26px; padding: 0 8px; font-size: 12px; }
-.src-seg button { height: 42px; padding: 0 16px; font-size: 14px; }
 .chart { position: relative; height: 430px; }
 .chart canvas, .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 #funnel svg { cursor: crosshair; touch-action: none; user-select: none; }
@@ -209,6 +249,14 @@ table.rel .tag { margin-left: 0; color: var(--accent); background: var(--accent-
 .tip svg { display: block; margin: 4px 0; }
 svg text { font-family: inherit; }
 @media (max-width: 1100px) { .grid-main, .grid-2x2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {                     /* 휴대폰 폭: 위쪽 바는 로고와 아이콘만, 여백은 좁게 */
+  .topbar { gap: 4px; padding: 8px 12px; }
+  .topbar #topnote { display: none; }
+  .topbar .uc-logo { font-size: 17px; margin-right: auto; }
+  .page { padding: 12px 12px 40px; }
+  #hist-sub { display: none; }
+  .home-corner { top: 10px; right: 10px; }
+}
 
 /* ── 시작 화면 (사내 첫 화면과 같은 틀: 로고 · 검색창 · 왼쪽 칩 · 오른쪽 아이콘 둘) ─────────── */
 .home {
@@ -219,14 +267,16 @@ svg text { font-family: inherit; }
   color: var(--h-ink); background: var(--h-bg);
   font-family: "Pretendard Variable", Inter, Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
 }
-@media (prefers-color-scheme: dark) {
-  .home {
-    --h-ink: #e6e9ef; --h-bg: #12161d; --h-card: #1b212b; --h-line: #2c3440; --h-line2: #3b4554; --h-ph: #7d8695; --h-icon: #9aa3b2; --h-chip: #aab3c2;
-    --h-chip-bg: #232a35; --h-chip-hover: #16302f; --h-hover-bg: #16302f; --h-hover-line: #24514e; --h-tip-line: #3b4554; --h-tip-ink: #dfe5ee;
-  }
+[data-theme="dark"] .home {
+  --h-ink: #e6e9ef; --h-bg: #12161d; --h-card: #1b212b; --h-line: #2c3440; --h-line2: #3b4554; --h-ph: #7d8695; --h-icon: #9aa3b2; --h-chip: #aab3c2;
+  --h-chip-bg: #232a35; --h-chip-hover: #16302f; --h-hover-bg: #16302f; --h-hover-line: #24514e; --h-tip-line: #3b4554; --h-tip-ink: #dfe5ee;
 }
 body:has(.home:not([hidden])) { background: #f6f7f9; }
-@media (prefers-color-scheme: dark) { body:has(.home:not([hidden])) { background: #12161d; } }
+[data-theme="dark"] body:has(.home:not([hidden])) { background: #12161d; }
+.home { position: relative; }
+.home-corner { position: absolute; top: 16px; right: 20px; }
+.home .icon-btn { color: var(--h-icon); }
+.home .icon-btn:hover, .home .icon-btn:focus-visible { color: var(--brand-deep); background: var(--h-hover-bg); border-color: var(--h-hover-line); }
 .home-header { display: flex; justify-content: center; margin: 0 0 26px; }
 .home-title { display: flex; margin: 0; }
 .home .uc-logo { font-size: clamp(24px, 5.6vw, 72px); padding: 0 0 .08em; }
