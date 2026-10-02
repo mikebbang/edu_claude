@@ -1,10 +1,11 @@
-"""공정 조합 퍼널 웹 서버: raw.csv 업로드 → 판정 실행(따로 프로세스에서, 여러 개 동시에) → funnel · 순위표 · 상세 화면.
+"""UNIT_COMMONALITY 웹 서버: raw.csv 업로드 → 판정 실행(따로 프로세스에서, 여러 개 동시에) → funnel · 순위표 · 상세 화면.
 실행마다 data/runs/<id>/에 설정 · 결과 · 상세용 데이터를 저장해 두어, 실행 기록에서 고르면 다시 계산하지 않고 연다"""
 import hashlib
 import json
 import multiprocessing as mp
 import os
 import pickle
+import re
 import shutil
 import threading
 import time
@@ -20,11 +21,30 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import combi
-from combi import views
+from combi import db, views
 
 from . import worker
 
 BASE = Path(__file__).resolve().parent
+
+
+def _load_env(path):
+    """KEY=VALUE 줄로 된 .env 파일을 환경 변수로 읽는다 (이미 있는 값은 그대로). DB 접속 정보처럼 git에 올리면 안 되는 값을 둔다"""
+    try:
+        lines = path.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return
+    for line in lines:
+        m = re.match(r'\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$', line)
+        if not m or line.lstrip().startswith('#'):
+            continue
+        k, v = m.groups()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+            v = v[1:-1]
+        os.environ.setdefault(k, v)
+
+
+_load_env(BASE.parent / '.env')
 DATA_DIR = Path(os.environ.get('COMBI_DATA_DIR', BASE.parent / 'data')).resolve()   # 올린 파일 · 실행 기록을 두는 곳
 UPLOADS, RUNS = DATA_DIR / 'uploads', DATA_DIR / 'runs'
 for _p in (UPLOADS, RUNS):
@@ -66,6 +86,9 @@ def _settle(v, exitcode=None):
     ok = out.pop('ok')
     v.update(out, status='done' if ok else 'error', finished=time.time())
     v['seconds'] = round(v['finished'] - v.get('started', v['created']), 1)
+    csv = UPLOADS / f"{v['file_id']}.csv"
+    if v.get('job_source') and csv.exists():          # DB에서 가져온 raw.csv 크기
+        v['file_size'] = csv.stat().st_size
     for name in ('progress.json', 'outcome.json'):
         (d / name).unlink(missing_ok=True)
     _save(v)
@@ -102,7 +125,16 @@ async def lifespan(_):
     _stop()
 
 
-app = FastAPI(title='공정 조합 퍼널', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='UNIT_COMMONALITY', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+
+
+@app.middleware('http')
+async def revalidate_pages(request, call_next):
+    """화면 파일(HTML · JS · CSS)은 쓸 때마다 바뀌었는지 서버에 묻게 한다. 새 버전을 올린 뒤 브라우저가 예전 파일을 쓰지 않게"""
+    resp = await call_next(request)
+    if not request.url.path.startswith('/api/'):
+        resp.headers['Cache-Control'] = 'no-cache'
+    return resp
 
 
 class RunRequest(BaseModel):
@@ -162,7 +194,7 @@ def _job(rid):
             v = runs.get(rid)
             if v is None:                        # 기다리는 동안 지운 실행
                 return
-            p = spawn.Process(target=worker.main, args=(str(RUNS / rid), str(UPLOADS / f"{v['file_id']}.csv"), v['settings']),
+            p = spawn.Process(target=worker.main, args=(str(RUNS / rid), str(UPLOADS / f"{v['file_id']}.csv"), v['settings'], v.get('job_source')),
                               name=f'combi-{rid}', daemon=True)
             p.start()
             procs[rid] = p
@@ -199,6 +231,35 @@ def start_run(req: RunRequest):
     return {'run_id': rid, 'reused': False}
 
 
+class JobRequest(BaseModel):
+    job_id: str
+    settings: dict = {}
+
+
+@app.post('/api/jobs')
+def start_job(req: JobRequest):
+    """job_id로 DB에서 데이터를 가져와 실행한다. 가져온 raw.csv는 올린 파일 목록에도 남아 설정만 바꿔 다시 돌릴 수 있다"""
+    try:
+        jid = db.check_job_id(req.job_id)
+        cfg = combi.Settings.from_dict(req.settings).to_dict()
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    if not db.db_url():
+        raise HTTPException(503, 'DB 접속 정보가 없어 job_id로 가져올 수 없습니다. raw.csv를 올리거나, 서버의 .env 파일에 COMBI_DB_URL을 넣고 서버를 다시 켜 주세요.')
+    with lock:
+        for v in runs.values():                       # 같은 job_id · 같은 설정으로 가져오는 중이면 그 실행을 같이 본다
+            if v.get('job_source') == jid and v['settings'] == cfg and v['status'] in ACTIVE and v.get('code') == CODE:
+                return {'run_id': v['id'], 'reused': True}
+        rid, fid = uuid.uuid4().hex[:12], uuid.uuid4().hex[:12]
+        (RUNS / rid).mkdir()
+        v = {'id': rid, 'file_id': fid, 'file_name': f'job_{jid}.csv', 'file_size': None, 'settings': cfg, 'code': CODE,
+             'status': 'queued', 'created': time.time(), 'job_source': jid, 'job_ids': [jid]}
+        runs[rid] = v
+        _save(v)
+    threading.Thread(target=_job, args=(rid,), daemon=True).start()
+    return {'run_id': rid, 'reused': False}
+
+
 def _progress(rid):
     try:
         return json.loads((RUNS / rid / 'progress.json').read_text(encoding='utf-8'))
@@ -209,7 +270,7 @@ def _progress(rid):
 def _brief(v):
     """실행 기록 목록 · 상태 조회에 보내는 값"""
     out = {k: v.get(k) for k in ('id', 'file_id', 'file_name', 'file_size', 'settings', 'status', 'created', 'started', 'finished',
-                                 'seconds', 'error', 'targets', 'wafers', 'job_ids', 'analysis_dates')}
+                                 'seconds', 'error', 'targets', 'wafers', 'job_ids', 'analysis_dates', 'job_source', 'no_data', 'rows')}
     out.update(old=v.get('code') != CODE, file_exists=(UPLOADS / f"{v['file_id']}.csv").exists(), stage=None, text='', ahead=0)
     now = time.time()
     if v['status'] == 'running':
@@ -234,7 +295,7 @@ def run_list():
     with lock:
         out = [_brief(v) for v in runs.values()]
     out.sort(key=lambda x: x['created'], reverse=True)
-    return {'runs': out, 'workers': WORKERS, 'defaults': combi.Settings().to_dict()}
+    return {'runs': out, 'workers': WORKERS, 'defaults': combi.Settings().to_dict(), 'db': bool(db.db_url())}
 
 
 @app.get('/api/runs/{rid}')

@@ -1,8 +1,7 @@
-# 가상환경 · 캐시
 .venv/
 __pycache__/
 *.pyc
-# 올린 파일과 로그 (실제 데이터는 저장소에 올리지 않는다)
 data/
 *.log
 raw.csv
+.env

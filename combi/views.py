@@ -55,6 +55,27 @@ def _bounds(sc, thr, grid):
     return out
 
 
+def _bad_of(d, m):
+    return num(np.nan_to_num(d['bad'])[m].mean(), 4) if d['B'] is not None and m.any() else None
+
+
+def target_brief(result, c, ref=None):
+    """대상 하나의 요약. ref(대표 대상)를 주면 웨이퍼 겹침과 한쪽에만 있는 웨이퍼의 bad 비율도 (같은 웨이퍼로 묶인 대상 비교용)"""
+    d, r = result.data, result.res
+    st = d['steps'][c['step']]
+    m = members_of(d, c)
+    out = {'key': c['key'], 'step': c['step'], 'step_name': st['name'], 'desc': st['proc'], 'k': c['k'],
+           'items': [[int(q), int(u)] for q, u in c['items']], 'path': path_label(st, c['items']),
+           'parts': [path_label(st, [it]) for it in c['items']], 'n': c['n'], 'bad': _bad_of(d, m),
+           'excess': num(metric(c, r), 2), 'certainty': num(c['z'] / c['thr'], 3)}
+    if ref is not None:
+        mr = members_of(d, ref)
+        mine, theirs = m & ~mr, mr & ~m
+        out.update(overlap=num((m & mr).sum() / max(1, (m | mr).sum()), 3), only_n=int(mine.sum()), only_bad=_bad_of(d, mine),
+                   ref_only_n=int(theirs.sum()), ref_only_bad=_bad_of(d, theirs))
+    return out
+
+
 def target_row(result, rank, c):
     """순위표 한 줄"""
     d, r, ranked = result.data, result.res, result.ranked
@@ -67,11 +88,15 @@ def target_row(result, rank, c):
         notes.append('같은 웨이퍼: ' + ', '.join(alts[:3]) + (f' 외 {len(alts) - 3}개' if len(alts) > 3 else ''))
     if (a := ranked['cross'].get(c['key'])) is not None:
         notes.append(f"다른 STEP 탓 의심: {d['steps'][a['step']]['name']} {path_label(d['steps'][a['step']], a['items'])}")
+    merged = sorted((target_brief(result, r['by_key'][k], c) for k, v in ranked['same_as'].items() if v == c['key']),
+                    key=lambda b: -(b['excess'] or 0))           # 웨이퍼가 같아 이 줄에 묶인 대상
+    cross = ranked['cross'].get(c['key'])
     return {'rank': rank, 'key': c['key'], 'step': c['step'], 'step_name': st['name'], 'desc': st['proc'], 'k': c['k'],
-            'items': [[int(q), int(u)] for q, u in c['items']], 'path': path_label(st, c['items']), 'n': c['n'],
+            'items': [[int(q), int(u)] for q, u in c['items']], 'path': path_label(st, c['items']),
+            'parts': [path_label(st, [it]) for it in c['items']], 'n': c['n'],
             'bad': num(np.nanmean(d['bad'][m]), 4) if has_b else None, 'exp_bad': num(expected_bad(c, r), 4) if has_b else None,
             'excess': num(metric(c, r), 2), 'vmean': num(np.nanmean(d['value'][m])), 'certainty': num(c['z'] / c['thr'], 3),
-            'note': ' · '.join(notes)}
+            'note': ' · '.join(notes), 'merged': merged, 'cross': target_brief(result, cross, c) if cross is not None else None}
 
 
 def run_payload(result):
@@ -101,12 +126,14 @@ def run_payload(result):
                         'bad': nums(yb[idx], 5) if yb is not None else None}
     marks = []                                              # 경계 밖 점 (bad · good path)
     steps = d['steps']
+    same_as = result.ranked['same_as']
     for i in np.flatnonzero(over | good):
         c = combos[i]
         st = steps[c['step']]
         marks.append({'side': 'bad' if over[i] else 'good', 'n': c['n'], 'judg': num(yj[i], 5), 'mean': num(ym[i], 5),
                       'bad': num(yb[i], 5) if yb is not None else None, 'rank': rank_of.get(c['key']), 'target': tgt.get(c['key']),
-                      'label': f"{st['name']} {path_label(st, c['items'])}", 'k': c['k'], 'certainty': num(c['z'] / c['thr'], 3)})
+                      'label': f"{st['name']} {path_label(st, c['items'])}", 'k': c['k'], 'certainty': num(c['z'] / c['thr'], 3),
+                      'key': c['key'], 'merged': rank_of.get(same_as[c['key']]) if c['key'] in same_as else None})
     groups = {g: m for g, m in result.res['share_groups'].items()}
     counts = result.counts
     info = {

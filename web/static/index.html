@@ -3,21 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>공정 조합 퍼널</title>
+<title>UNIT_COMMONALITY</title>
 <link rel="icon" href="data:,">
+<link rel="preload" href="fonts/Poppins-ExtraBold.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<!-- 시작 화면: Job ID로 실행 기록 찾기 · raw.csv 올리기 · 최근 실행 · 사용자 가이드 -->
+<main id="home" class="home" hidden>
+  <header class="home-header">
+    <h1 class="home-title"><span class="uc-logo" aria-label="UNIT_COMMONALITY"><span class="w1">UNIT</span><span class="us">_</span><span class="w2">COMMONALITY</span></span></h1>
+  </header>
+  <section class="query-area" aria-label="Job ID 조회">
+    <div class="query-panel">
+      <form class="query-form" id="home-form" autocomplete="off">
+        <button class="query-occas-trigger" id="home-upload" type="button" aria-label="raw.csv 올려서 분석">
+          <svg class="query-occas-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+          <span class="query-occas-label">csv</span><span class="query-icon-tooltip" role="tooltip">raw.csv 올려서 분석</span>
+        </button>
+        <input type="file" id="home-file" accept=".csv" hidden>
+        <label>
+          <span class="visually-hidden">Job ID</span>
+          <input id="home-q" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Job ID를 입력하세요"
+                 role="combobox" aria-expanded="false" aria-controls="home-list" aria-autocomplete="list">
+        </label>
+        <button class="query-recent-button" id="home-recent" type="button" title="최근 실행 기록" aria-label="최근 실행 기록">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V9H8"/><path d="M12 7.5V12l3 2"/></svg>
+        </button>
+        <a class="query-guide" href="guide.html" title="사용자 가이드" aria-label="사용자 가이드">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5c-1.8-1.3-4.3-2-7.5-2v13c3.2 0 5.7.7 7.5 2 1.8-1.3 4.3-2 7.5-2v-13c-3.2 0-5.7.7-7.5 2Z"/><path d="M12 6.5v13"/></svg>
+        </a>
+      </form>
+      <div class="home-pop" id="home-list" role="listbox" aria-label="실행 기록" hidden></div>
+    </div>
+    <div class="home-msg" id="home-msg" aria-live="polite"></div>
+    <p class="home-hint">Job ID로 지난 실행을 찾거나, 왼쪽 <b>CSV</b> 버튼으로 raw.csv를 올려 새로 분석합니다.</p>
+  </section>
+</main>
+
+<!-- 분석 화면 -->
+<div id="app" hidden>
 <header class="topbar">
-  <h1>공정 조합 퍼널</h1>
-  <span class="muted" id="topnote">raw.csv를 올리고 Run을 누르세요</span>
+  <a class="uc-logo brand" href="#" title="처음 화면으로" aria-label="UNIT_COMMONALITY 처음 화면으로"><span class="w1">UNIT</span><span class="us">_</span><span class="w2">COMMONALITY</span></a>
+  <span class="muted" id="topnote">Job ID를 넣거나 raw.csv를 올리고 Run을 누르세요</span>
+  <span class="grow"></span>
+  <button class="icon-btn" id="top-history" type="button" title="실행 기록" aria-label="실행 기록으로">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V9H8"/><path d="M12 7.5V12l3 2"/></svg>
+  </button>
+  <a class="icon-btn" href="guide.html" title="사용자 가이드" aria-label="사용자 가이드">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5c-1.8-1.3-4.3-2-7.5-2v13c3.2 0 5.7.7 7.5 2 1.8-1.3 4.3-2 7.5-2v-13c-3.2 0-5.7.7-7.5 2Z"/><path d="M12 6.5v13"/></svg>
+  </a>
 </header>
 
 <main class="page">
   <section class="card setup" aria-label="실행 설정">
-    <div class="row">
-      <label class="file-btn"><input type="file" id="file" accept=".csv"><span>raw.csv 올리기</span></label>
-      <select id="recent" aria-label="최근에 올린 파일"><option value="">올린 파일 없음</option></select>
+    <div class="row src-row">
+      <span class="seg src-seg" id="srcseg" role="group" aria-label="분석할 데이터">
+        <button type="button" data-v="job" class="on">Job ID</button><button type="button" data-v="file">raw.csv 파일</button>
+      </span>
+      <span class="src" id="src-job">
+        <input id="job_id" class="q-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Job ID를 입력하세요 (예: 2281935)" aria-label="Job ID">
+        <span class="muted small">DB에서 가져와 분석합니다</span>
+      </span>
+      <span class="src" id="src-file" hidden>
+        <label class="file-btn"><input type="file" id="file" accept=".csv">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>raw.csv 올리기</span></label>
+        <select id="recent" aria-label="올린 파일"><option value="">올린 파일 없음</option></select>
+      </span>
+    </div>
+    <div class="row opt-row">
       <span class="field"><label for="min_n">MIN_N</label><input id="min_n" type="number" min="2" step="1" value="4"></span>
       <span class="field"><label for="max_depth">MAX_DEPTH</label><input id="max_depth" type="number" min="1" step="1" value="5">
         <label class="chk"><input type="checkbox" id="no_limit">제한 없음</label></span>
@@ -37,10 +91,11 @@
       <span class="field"><label for="line_id">line_id</label><input id="line_id" type="text" placeholder="전체"></span>
       <span class="field"><label for="step_suffix">STEP 이름 규칙</label><input id="step_suffix" type="text" value="_(\d+)$"></span>
     </div>
+    <div id="src-note" class="src-note muted small" hidden></div>
     <div id="status" class="status" hidden></div>
   </section>
 
-  <section class="card" aria-label="실행 기록">
+  <section class="card" id="history-card" aria-label="실행 기록">
     <div class="card-head">
       <h2>History</h2><span class="muted small" id="hist-sub"></span><span class="grow"></span>
       <input id="hist-q" type="search" placeholder="job_id · 파일 이름 찾기" aria-label="실행 기록 찾기">
@@ -53,7 +108,7 @@
     <div class="grid-main">
       <div class="card">
         <div class="card-head">
-          <h2>Funnel</h2><span class="muted small">모든 STEP의 조합</span><span class="grow"></span>
+          <h2>Funnel</h2><span class="muted small" id="fhint">모든 STEP의 조합 · 드래그로 여러 순위 고르기 (Ctrl · ⌘ · Shift: 더하기)</span><span class="grow"></span>
           <span class="seg" id="yseg" role="group" aria-label="funnel 세로축">
             <button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button>
           </span>
@@ -68,46 +123,54 @@
     </div>
   </section>
 
-  <section id="detail" class="card" hidden aria-live="polite">
-    <div class="detail-head">
-      <button type="button" class="ghost" id="prev" aria-label="이전 순위">◀</button>
-      <div id="dh" class="dh"></div>
-      <button type="button" class="ghost" id="next" aria-label="다음 순위">▶</button>
-    </div>
-    <div id="dstat" class="dstat"></div>
-    <div class="row sel-row">
-      <span id="chips" class="chips"></span>
-      <button type="button" class="ghost" id="reset">↺ 원래 경로로</button>
-      <span class="grow"></span>
-      <span class="seg" id="cseg" role="group" aria-label="산점도 색">
-        <button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">조합별 색</button>
-      </span>
-    </div>
-    <div class="grid-detail">
-      <div class="sub">
-        <h3>Order × Unit</h3>
-        <div id="blocks" class="blocks"></div>
-        <div class="muted small">칸 = Unit · bad 비율 · 웨이퍼 수 · 클릭해서 고르거나 빼기</div>
-      </div>
-      <div class="sub">
-        <h3>웨이퍼 산점도</h3>
-        <div id="scatter-legend" class="legend"></div>
-        <svg id="scatter" class="chart-svg" role="img" aria-label="웨이퍼 산점도"></svg>
-      </div>
-    </div>
-    <div class="grid-three">
-      <div class="sub">
-        <div class="sub-head"><h3>같은 Order 다른 경로 비교</h3><span class="grow"></span>
-          <span class="seg small" id="pseg" role="group" aria-label="비교 차트 세로축">
-            <button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button>
-          </span></div>
-        <svg id="peers" class="chart-svg" role="img" aria-label="같은 Order 다른 경로 비교"></svg>
-      </div>
-      <div class="sub"><h3>이 경로 vs 나머지</h3><svg id="compare" class="chart-svg" role="img" aria-label="이 경로와 나머지 비교"></svg></div>
-      <div class="sub"><h3>시간에 따른 bad 추이</h3><svg id="trend" class="chart-svg" role="img" aria-label="시간에 따른 bad 추이"></svg></div>
-    </div>
+  <section id="details" hidden aria-live="polite">
+    <div class="details-note muted small" id="details-note" hidden></div>
   </section>
 </main>
+</div>
+
+<!-- 상세 카드 하나 (고른 대상마다 복제) -->
+<template id="panel-tpl">
+  <article class="card panel">
+    <div class="detail-head">
+      <button type="button" class="ghost" data-a="prev" aria-label="이전 순위">◀</button>
+      <div class="dh" data-r="dh"></div>
+      <button type="button" class="ghost" data-a="next" aria-label="다음 순위">▶</button>
+      <button type="button" class="ghost close" data-a="close" aria-label="이 상세 닫기" title="닫기">✕</button>
+    </div>
+    <div class="dstat" data-r="dstat">불러오는 중…</div>
+    <div class="row sel-row">
+      <span class="chips" data-r="chips"></span>
+      <button type="button" class="ghost" data-a="reset">↺ 원래 경로로</button>
+    </div>
+    <div class="related" data-r="related" hidden></div>
+    <div class="grid-2x2">
+      <div class="sub cell">
+        <div class="sub-head"><h3>Order × Unit</h3><span class="grow"></span><span class="muted small">칸 = 그 Order에서 그 Unit을 지난 웨이퍼 · 클릭해서 고르거나 빼기</span></div>
+        <div class="blocks" data-r="blocks"></div>
+      </div>
+      <div class="sub cell">
+        <div class="sub-head"><h3>웨이퍼 산점도</h3><span class="grow"></span>
+          <label class="size-ctl muted small">점 크기 <input type="range" min="1" max="8" step="0.5" data-a="size" aria-label="산점도 점 크기"></label>
+          <span class="seg small" data-r="cseg" role="group" aria-label="산점도 색"><button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">조합별 색</button></span>
+        </div>
+        <div class="legend" data-r="slegend"></div>
+        <svg class="chart-svg" data-r="scatter" role="img" aria-label="웨이퍼 산점도"></svg>
+      </div>
+      <div class="sub cell">
+        <div class="sub-head"><h3>같은 Order 다른 경로 비교</h3><span class="grow"></span>
+          <span class="seg small" data-r="pseg" role="group" aria-label="비교 차트 세로축"><button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button></span>
+        </div>
+        <svg class="chart-svg" data-r="peers" role="img" aria-label="같은 Order 다른 경로 비교"></svg>
+      </div>
+      <div class="sub cell">
+        <div class="sub-head"><h3>이 경로 vs 나머지</h3></div>
+        <svg class="chart-svg" data-r="compare" role="img" aria-label="이 경로와 나머지 비교"></svg>
+      </div>
+    </div>
+  </article>
+</template>
+
 <div id="tip" class="tip" hidden></div>
 <script src="charts.js"></script>
 <script src="app.js"></script>

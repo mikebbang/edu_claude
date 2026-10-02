@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사용자 가이드 · UNIT_COMMONALITY</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<style>
+  .guide { max-width: 860px; margin: 0 auto; padding: 18px 20px 60px; font-size: 14px; line-height: 1.7; }
+  .guide h1 { font-size: 22px; margin: 18px 0 4px; }
+  .guide h2 { font-size: 16px; margin: 30px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .guide h3 { font-size: 14px; margin: 18px 0 4px; }
+  .guide p, .guide li { color: var(--ink); }
+  .guide ul, .guide ol { padding-left: 22px; margin: 6px 0; }
+  .guide code { font-size: 12.5px; background: var(--hover); padding: 1px 5px; border-radius: 4px; }
+  .guide .ex { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin: 8px 0; }
+  .guide nav { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+  .guide nav a, .guide a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="uc-logo brand" href="./" title="처음 화면으로"><span class="w1">UNIT</span><span class="us">_</span><span class="w2">COMMONALITY</span></a>
+  <span class="muted">사용자 가이드</span>
+  <span class="grow"></span>
+  <a class="toplink" href="./#analysis">분석 화면으로</a>
+</header>
+<main class="guide">
+  <h1>사용자 가이드</h1>
+  <p class="muted">설비 이력(Job ID로 DB에서 가져오거나 raw.csv를 올림)에서 웨이퍼가 지난 공정 유닛의 조합 가운데 bad나 y_value가 튀는 경로를 찾아 순위로 보여 줍니다.</p>
+  <nav>
+    <a href="#start">시작 화면</a><a href="#run">실행</a><a href="#funnel">Funnel</a><a href="#ranking">Ranking</a><a href="#detail">상세</a><a href="#same">같은 웨이퍼로 묶인 대상</a><a href="#faq">자주 묻는 질문</a>
+  </nav>
+
+  <h2 id="start">시작 화면</h2>
+  <ul>
+    <li><b>Job ID 입력칸</b>: 지난 실행 기록에서 그 Job ID(또는 파일 이름 일부)를 찾습니다. ↑ · ↓로 고르고 Enter를 누르면 저장된 결과를 다시 계산하지 않고 엽니다. 숫자 Job ID면 목록 끝에 <b>DB에서 가져와 분석</b>이 나옵니다. 지난 기록이 없으면 Enter만 눌러도 DB에서 데이터를 읽어 기본 설정으로 바로 실행합니다. DB에 데이터가 없으면 raw.csv를 올리라고 안내합니다.</li>
+    <li><b>왼쪽 CSV 버튼</b>: raw.csv를 올립니다. 다 올라가면 설정 화면으로 넘어가니 설정을 확인하고 Run을 누르세요.</li>
+    <li><b>시계 버튼</b>: 최근 실행 8개를 보여 줍니다. 모든 사용자의 실행이 함께 나옵니다.</li>
+    <li><b>책 버튼</b>: 이 안내입니다.</li>
+  </ul>
+  <p>분석 화면 왼쪽 위의 <b>UNIT_COMMONALITY</b>를 누르면 시작 화면으로 돌아옵니다. 주소창 끝의 <code>#run=…</code>까지 복사해 보내면 받은 사람도 같은 결과를 엽니다.</p>
+
+  <h2 id="run">실행 (분석 화면 위쪽)</h2>
+  <ul>
+    <li><b>데이터</b>: 맨 위에서 <b>Job ID</b>(DB에서 가져오기) 또는 <b>raw.csv 파일</b>(올리거나 전에 올린 파일 고르기)을 고릅니다. DB에서 가져온 데이터도 <code>job_&lt;Job ID&gt;.csv</code>로 파일 목록에 남아, 설정만 바꿔 다시 돌릴 때는 DB에 다시 묻지 않습니다.</li>
+    <li><b>MIN_N</b>: 조합에 필요한 최소 웨이퍼 수. <b>MAX_DEPTH</b>: 한 조합에 묶을 최대 Order 수("제한 없음" 가능). 나머지는 <b>고급 설정</b>에 있습니다.</li>
+    <li><b>Run</b>을 누르면 진행 막대가 나옵니다. 여러 사람이 동시에 눌러도 함께 돌고, 같은 파일 · 같은 설정으로 이미 돌린 기록이 있으면 그 결과를 엽니다.</li>
+    <li><b>History</b>: 돌린 실행이 모두 남습니다. 줄을 누르면 결과를 열고, <b>삭제</b>로 지웁니다(되돌릴 수 없음).</li>
+  </ul>
+
+  <h2 id="funnel">Funnel (모든 STEP의 조합)</h2>
+  <ul>
+    <li>점 하나 = 조합(경로) 하나. 가로 = 그 경로를 지난 웨이퍼 수, 세로 = 종합 점수 / y_value 평균 / bad 비율 중 고른 것.</li>
+    <li>회색 띠 = 기준선 안. 웨이퍼가 적을수록 우연히 튀기 쉬워서 띠가 넓어집니다(깔때기 모양). 세로축은 가운데 선을 기준으로 위아래를 같은 폭으로 잡아 띠의 양 끝이 다 보입니다.</li>
+    <li>빨간 점 = 기준선 밖(bad path), 번호 = 순위. 번호 없는 빨간 점은 어느 순위에 함께 포함된 조합입니다(마우스를 올리면 나옵니다).</li>
+    <li><b>여러 개 고르기</b>: 빈 곳에서 끌면 상자 안의 순위가 모두 골라지고, 아래에 순위마다 상세 카드가 생깁니다. Ctrl · ⌘ · Shift를 누르고 끌거나 점을 누르면 지금 고른 것에 더합니다.</li>
+  </ul>
+
+  <h2 id="ranking">Ranking (혐의 대상 순위표)</h2>
+  <ul>
+    <li>순위 기준은 <b>초과 bad</b> = 실제 bad 웨이퍼 수 − 예상 bad 웨이퍼 수(part 구성으로 기대되는 수). 이 경로를 고치면 줄어들 bad 웨이퍼 수라고 보면 됩니다. good_bad가 없는 데이터는 웨이퍼 수 × y_value 차이(N × ΔValue)로 줄 세웁니다.</li>
+    <li><b>Certainty</b> = 기준선 대비 위치. 1을 넘으면 기준선 밖입니다(예: 1.5면 가운데 선에서 기준선까지 거리의 1.5배만큼 벗어남).</li>
+    <li>줄을 누르면 그 순위 하나, <b>Ctrl · ⌘+클릭</b>은 더하거나 빼기, <b>Shift+클릭</b>은 마지막으로 고른 줄부터 그 줄까지 고릅니다. ↑ · ↓ 키로도 움직입니다. 고른 줄은 파란색이고 funnel에서 파란 원으로 표시됩니다.</li>
+    <li>경로가 길면 "O1:유닛" 덩어리 단위로 줄을 바꿉니다. STEP 설명이 길어 잘리면 마우스를 올려 전체를 봅니다.</li>
+  </ul>
+
+  <h2 id="detail">상세 (고른 순위마다 카드 하나)</h2>
+  <p>카드 위쪽에 지금 고른 경로의 웨이퍼 수 · bad 비율 · Certainty가 나옵니다. 아래는 2 × 2 차트입니다.</p>
+  <h3>Order × Unit</h3>
+  <ul>
+    <li>그 STEP의 Order(열)와 Unit(칸). 빨간 칸이 지금 고른 경로입니다.</li>
+    <li>칸의 숫자 = <b>그 Order에서 그 Unit을 지난 웨이퍼 전체</b>의 bad 비율 · 웨이퍼 수입니다. 다른 Order를 무엇으로 골랐는지와 상관없이 그 칸만의 값입니다.</li>
+    <li>색이 진할수록 bad 비율이 전체 평균보다 높습니다(전체 평균 이하는 바탕색).</li>
+    <li>칸을 누르면 경로에 Order를 더하거나 빼고 Unit을 바꿀 수 있습니다. 원래 순위 경로와 달라지면 "탐색 중 (판정 아님)"이 붙고, <b>원래 경로로</b>를 누르면 돌아갑니다. Unit이 많으면 칸 안에서 스크롤됩니다.</li>
+  </ul>
+  <div class="ex">예: O2 열의 <code>CMP08020-A</code> 칸이 "25% · 120"이면, O2에서 CMP08020-A를 지난 웨이퍼가 120장이고 그중 30장(25%)이 bad라는 뜻입니다.</div>
+  <h3>웨이퍼 산점도</h3>
+  <ul>
+    <li>점 하나 = 웨이퍼 하나. 가로 = 고른 Order 중 마지막 Order의 tkin_time, 세로 = y_value.</li>
+    <li><b>선택 경로 강조</b>(빨강 vs 회색) 또는 <b>조합별 색</b>(고른 Order들의 Unit 조합마다 색). <b>점 크기</b> 막대로 점을 키우거나 줄입니다(모든 카드에 같이 적용되고 이 브라우저에 기억됩니다).</li>
+  </ul>
+  <h3>같은 Order 다른 경로 비교</h3>
+  <p>점 하나 = 같은 Order들을 지난 다른 Unit 조합 하나. 띠 밖이면 웨이퍼 수를 감안해도 튀는 경로입니다. 지금 경로만 튀는지, 그 Order 전체가 흔들리는지 봅니다.</p>
+  <h3>이 경로 vs 나머지</h3>
+  <p>같은 Order를 지난 웨이퍼를 이 경로와 나머지로 나눠 bad 비율 막대와 y_value 분포(상자 = 가운데 50%, 굵은 선 = 중앙값)를 비교합니다.</p>
+
+  <h2 id="same">같은 웨이퍼로 묶인 대상</h2>
+  <ul>
+    <li>두 대상의 웨이퍼가 <b>90% 이상</b>(고급 설정의 "같은 웨이퍼 묶기") 같으면 순위표에는 한 줄로 나오고, 그 줄의 설명에 "같은 웨이퍼: …"가 붙습니다.</li>
+    <li>어느 쪽이 줄에 올라오나: <b>초과 bad가 큰 쪽</b>입니다. 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)이 올라옵니다.</li>
+    <li>묶인 쪽은 회색으로 바뀌지 않습니다. funnel에서는 번호 없는 빨간 점으로 남고, 그 순위의 상세 카드 위쪽 <b>같은 웨이퍼로 이 줄에 묶인 대상</b> 표에서 나란히 비교합니다. <b>상세 열기</b>를 누르면 그 대상의 상세 카드가 따로 생깁니다.</li>
+    <li>표의 <b>겹침</b>이 100%면 두 경로를 지난 웨이퍼가 똑같아서 데이터로는 어느 STEP 탓인지 가릴 수 없습니다. 100%보다 작으면 <b>서로 다른 웨이퍼</b>(한쪽에만 있는 웨이퍼)의 bad가 차이를 만듭니다.</li>
+  </ul>
+  <div class="ex">예: step 1000 경로가 1위, step 2000 경로가 겹침 97%로 묶임 → step 2000에만 있는 웨이퍼 0장, step 1000에만 있는 웨이퍼 11장(bad 36%). 이 11장 때문에 step 1000의 초과 bad가 조금 더 커서 줄에 올라온 것입니다. 공정 지식으로 step 2000이 원인이라고 보면, 그 11장이 왜 step 2000의 그 유닛을 지나지 않았는지 확인해 보면 됩니다.</div>
+  <p><b>다른 STEP 탓 의심</b>: 이 경로에서 다른 STEP 경로를 지난 웨이퍼를 빼면 차이가 사라지고, 그 다른 경로는 이 경로 없이도 기준선을 넘을 때 붙습니다. 상세 카드에서 그 경로를 바로 열 수 있습니다.</p>
+
+  <h2 id="faq">자주 묻는 질문</h2>
+  <h3>순위가 마음에 안 드는 대상이 1위입니다</h3>
+  <p>상세 카드의 "같은 웨이퍼로 이 줄에 묶인 대상"과 "다른 STEP 탓 의심"을 먼저 보세요. 원하는 대상이 거기 있으면 "상세 열기"로 두 카드를 나란히 놓고 비교합니다.</p>
+  <h3>결과가 사라졌습니다</h3>
+  <p>누군가 History에서 지웠을 수 있습니다(모든 사용자가 같은 목록을 봅니다). raw.csv를 다시 올려 Run을 누르세요.</p>
+</main>
+</body>
+</html>

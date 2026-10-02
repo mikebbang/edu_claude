@@ -4,7 +4,7 @@
 const C = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement);
-  for (const k of ['ink', 'ink2', 'muted', 'line', 'line2', 'band', 'bad', 'good', 'accent', 'card']) C[k] = cs.getPropertyValue('--' + k).trim();
+  for (const k of ['ink', 'ink2', 'muted', 'line', 'line2', 'band', 'bad', 'good', 'accent', 'ring', 'card']) C[k] = cs.getPropertyValue('--' + k).trim();
 }
 // 조합별 색 (빨강은 선택 경로 전용이라 뺀다)
 const PALETTE = ['#2f7fd8', '#1d9e75', '#7f77dd', '#ba7517', '#d4537e', '#639922', '#5f8fa3'];
