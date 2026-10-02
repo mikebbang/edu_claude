@@ -52,7 +52,7 @@
 <div id="app" hidden>
 <header class="topbar">
   <a class="uc-logo brand" href="#" title="처음 화면으로" aria-label="UNIT_COMMONALITY 처음 화면으로"><span class="w1">UNIT</span><span class="us">_</span><span class="w2">COMMONALITY</span></a>
-  <span class="muted" id="topnote">Job ID를 넣거나 raw.csv를 올리고 Run을 누르세요</span>
+  <span class="muted" id="topnote"></span>
   <span class="grow"></span>
   <button class="icon-btn" id="top-history" type="button" title="실행 기록 (History)" aria-label="실행 기록 열기" aria-controls="drawer" aria-expanded="false">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V9H8"/><path d="M12 7.5V12l3 2"/></svg>
@@ -84,7 +84,7 @@
       <span class="q-file" id="q-file" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>
         <span class="q-file-name" id="q-file-name"></span>
-        <button type="button" class="q-x" id="q-file-x" title="파일 빼고 Job ID로" aria-label="붙인 파일 빼기">✕</button>
+        <button type="button" class="q-x" id="q-file-x" title="파일 빼고 Job ID로" aria-label="붙인 파일 빼기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </span>
       <input id="job_id" class="q-text" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Job ID를 입력하세요 (예: 2281935)" aria-label="Job ID">
     </div>
@@ -135,7 +135,7 @@
     <div class="grid-main">
       <div class="card">
         <div class="card-head">
-          <h2>Funnel</h2><span class="muted small" id="fhint">모든 STEP의 조합 · 드래그로 여러 순위 고르기 (Ctrl · ⌘ · Shift: 더하기)</span><span class="grow"></span>
+          <h2>Funnel</h2><span class="muted small" id="fhint">모든 STEP의 조합 · 드래그로 여러 순위 고르기 · 빈 곳 클릭: 선택 풀기 · Ctrl/Shift: 더하기</span><span class="grow"></span>
           <span class="seg small" id="fview" role="group" aria-label="funnel 보는 범위" title="띠 전체: 경계선 양 끝까지 · 점 위주: 점이 모인 곳을 크게">
             <button type="button" data-v="all" class="on">띠 전체</button><button type="button" data-v="pts">점 위주</button>
           </span>
@@ -177,15 +177,15 @@
 <template id="panel-tpl">
   <article class="card panel">
     <div class="detail-head">
-      <button type="button" class="ghost" data-a="prev" aria-label="이전 순위">◀</button>
+      <button type="button" class="ghost icon-only" data-a="prev" aria-label="이전 순위" title="이전 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
       <div class="dh" data-r="dh"></div>
-      <button type="button" class="ghost" data-a="next" aria-label="다음 순위">▶</button>
-      <button type="button" class="ghost close" data-a="close" aria-label="이 상세 닫기" title="닫기">✕</button>
+      <button type="button" class="ghost icon-only" data-a="next" aria-label="다음 순위" title="다음 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button type="button" class="ghost close icon-only" data-a="close" aria-label="이 상세 닫기" title="닫기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="dstat" data-r="dstat">불러오는 중…</div>
     <div class="row sel-row">
       <span class="chips" data-r="chips"></span>
-      <button type="button" class="ghost" data-a="reset">↺ 원래 경로로</button>
+      <button type="button" class="ghost" data-a="reset"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>원래 경로로</button>
     </div>
     <div class="related" data-r="related" hidden></div>
     <div class="grid-2x2">

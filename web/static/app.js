@@ -59,7 +59,7 @@ function toast(html, { actions = [], timeout = 4000, onTimeout = null, kind = ''
   el.className = `toast ${kind}`;
   el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
   el.innerHTML = `<span class="t-msg">${html}</span>${actions.map((a, i) => `<button type="button" class="t-act" data-i="${i}">${esc(a.label)}</button>`).join('')}`
-    + '<button type="button" class="t-x" aria-label="알림 닫기">✕</button>';
+    + '<button type="button" class="t-x" aria-label="알림 닫기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
   let timer = null;
   let done = false;
   const handle = {};
@@ -352,8 +352,8 @@ async function loadResult(id, token, note = '') {
   const hasBad = S.res.info.has_bad;
   for (const b of $$('#yseg button[data-v=bad]')) b.disabled = !hasBad;
   if (!hasBad && S.yMode === 'bad') setSeg($('#yseg'), (S.yMode = 'judg'));
-  const job = (S.res.info.data.job_ids || [])[0];
-  $('#topnote').textContent = `${job ? job + ' · ' : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
+  const jobs = S.res.info.data.job_ids || [];
+  $('#topnote').textContent = `${jobs.length ? `JOB ID : ${jobs[0]}${jobs.length > 1 ? ` 외 ${jobs.length - 1}개` : ''} · ` : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
   renderConcl();
   renderSummary();
   renderFunnel();
@@ -372,12 +372,13 @@ function hideResults() {
   clearPanels();
   $('#results').hidden = true;
   $('#details').hidden = true;
-  $('#topnote').textContent = 'Job ID를 넣거나 raw.csv를 올리고 Run을 누르세요';
+  $('#topnote').textContent = '';
   setSetup(true);
   syncEmpty();
 }
 
 // 설정 카드: 결과가 있으면 한 줄 요약(데이터 · 설정 · [설정 바꾸기])으로 접고, 없으면 펼친다
+const ICON_INFO = '<svg class="ico-info" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.6v.1"/></svg>';   // ⓘ 글자는 PC마다 다른 글꼴로 그려져서 그림으로
 const ICON_FILE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>';
 const ICON_DB = '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7" ry="2.8"/><path d="M5 5.5v13c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8v-13"/><path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"/></svg>';
 function setSetup(open) {
@@ -860,11 +861,23 @@ function brushSelect(b) {
     const y = f.ys(k[m]);
     if (x >= xa && x <= xb && y >= ya && y <= yb) idx.add(r - 1);
   }
-  if (!idx.size) { flashHint('고른 영역에 순위가 매겨진 점이 없습니다'); return; }
+  if (!idx.size) {
+    if (b.add) flashHint('고른 영역에 순위가 매겨진 점이 없습니다');
+    else clearPicks();
+    return;
+  }
   const list = [...idx].sort((a, c) => a - c);
   S.focus = list[0];
   setPicks(list, b.add);
   revealRow(S.focus);
+}
+
+function clearPicks() {
+  if (!S.picks.length) return;
+  S.picks = [];
+  S.focus = null;
+  afterPicks();
+  flashHint('선택을 풀었습니다 · 점을 누르거나 끌어서 다시 고르세요');
 }
 
 function flashHint(text) {
@@ -899,7 +912,7 @@ function renderRanking() {
   const hasBad = S.res.info.has_bad;
   const cols = COLS.filter((c) => hasBad || !c.bad);
   const label = (c) => (c.key === 'excess' && !hasBad ? 'N × ΔValue' : c.label);   // good_bad가 없으면 순위 기준 = 웨이퍼 수 × Value 차이
-  const help = (c) => `<span class="help" data-help="${c.key === 'excess' && !hasBad ? 'dvalue' : c.key}">ⓘ</span>`;
+  const help = (c) => `<span class="help" data-help="${c.key === 'excess' && !hasBad ? 'dvalue' : c.key}">${ICON_INFO}</span>`;
   const head = cols.map((c) => `<th class="${c.left ? 'l' : 'num'}" data-k="${c.key}">${label(c)}${help(c)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▴' : ' ▾') : ''}</th>`).join('');
   const cell = (c, r) => {
     switch (c.key) {
@@ -918,7 +931,7 @@ function renderRanking() {
     ? `<table class="rank rk"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
     : '<div class="muted" style="padding:10px">기준선을 넘은 혐의 대상이 없습니다.</div>';
   $('#rank-sub').textContent = S.res.ranking.length
-    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${picked.size > 1 ? ` · ${picked.size}개 고름` : ''} · Ctrl · ⌘ · Shift+클릭으로 여러 개`
+    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${picked.size > 1 ? ` · ${picked.size}개 고름` : ''} · Ctrl/Shift+클릭으로 여러 개`
     : '';
 }
 
@@ -1202,7 +1215,7 @@ function renderRelated(p) {
       <td class="l diff">${rep ? '' : diffText(t, hasBad)}</td>
       <td class="num">${rep ? '' : `<button type="button" class="ghost mini" data-rel="merged" data-key="${esc(t.key)}">상세 열기</button>`}</td></tr>`;
     h += `<div class="rel-head"><b>같은 웨이퍼로 이 줄에 묶인 대상</b><span class="muted small">웨이퍼가 ${Math.round((sw ?? 0.9) * 100)}% 이상 같은 대상은 순위표에 한 줄로 나옵니다</span></div>
-      <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">겹침<span class="help" data-help="overlap">ⓘ</span></th>${hasBad ? '<th class="num">Bad %</th>' : ''}
+      <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">겹침<span class="help" data-help="overlap">${ICON_INFO}</span></th>${hasBad ? '<th class="num">Bad %</th>' : ''}
       <th class="num">${hasBad ? 'Excess bad' : 'N × ΔValue'}</th><th class="num">Certainty</th><th class="l">서로 다른 웨이퍼</th><th></th></tr></thead>
       <tbody>${tr(row, true)}${row.merged.map((t) => tr(t, false)).join('')}</tbody></table></div>
       <div class="muted small rel-why">순위표에는 ${metric}가 큰 쪽이 올라오고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)이 올라옵니다.
@@ -1607,6 +1620,23 @@ function bindAxisTips(el) {
 }
 
 let resizeTimer = null;
+// 화면 폭이 바뀌면(창 크기 · Windows 스크롤바가 생기고 없어질 때 · 확대) 차트를 그 폭으로 다시 그린다.
+// 예전 폭으로 그린 그림을 늘리거나 줄여 보여 주면 글자가 흐려지기 때문
+function watchWidths() {
+  const last = new WeakMap();
+  const ro = new ResizeObserver((entries) => {
+    let changed = false;
+    for (const en of entries) {
+      const w = Math.round(en.contentRect.width);
+      if (last.has(en.target) && last.get(en.target) !== w) changed = true;
+      last.set(en.target, w);
+    }
+    if (changed) { clearTimeout(resizeTimer); resizeTimer = setTimeout(rerender, 120); }
+  });
+  ro.observe($('.page'));
+  ro.observe($('#funnel'));
+}
+
 function rerender() {
   if (!S.res || S.view !== 'app') return;
   renderFunnel();
@@ -1670,12 +1700,19 @@ function bindFunnel() {
   fsv.addEventListener('mousemove', markTip);
   fsv.addEventListener('mouseleave', hideTip);
   fsv.addEventListener('click', (e) => {
-    if (S.brushed) return;
+    if (S.brushed || !S.res || !S.fn) return;
+    const add = e.shiftKey || e.ctrlKey || e.metaKey;
     const c = e.target.closest('circle[data-i]');
-    if (!c) return;
-    const k = S.res.funnel.marks[+c.dataset.i];
-    const r = k.rank || k.target;
-    if (!r) return;
+    const k = c ? S.res.funnel.marks[+c.dataset.i] : null;
+    const r = k ? k.rank || k.target : null;
+    if (!r) {                                         // 빈 곳(또는 순위와 상관없는 점)을 누르면 선택을 푼다
+      const box = fsv.getBoundingClientRect();
+      const x = e.clientX - box.left;
+      const y = e.clientY - box.top;
+      const f = S.fn;
+      if (!add && x >= f.L && x <= f.R && y >= f.T && y <= f.B) clearPicks();
+      return;
+    }
     S.focus = r - 1;
     if (e.shiftKey || e.ctrlKey || e.metaKey) togglePick(r - 1); else setPicks([r - 1]);
     revealRow(r - 1);
@@ -1689,7 +1726,7 @@ function init() {
   S.fView = store.get('uc.fview', 'all');
   setSeg($('#fview'), S.fView);
   document.addEventListener('uc-theme', () => { readColors(); rerender(); });   // 밝은 · 어두운 화면을 바꾸면 차트 색을 다시 읽어 그린다
-  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(rerender, 150); });
+  watchWidths();
   window.addEventListener('hashchange', route);
   window.addEventListener('popstate', route);
   $('#file').addEventListener('change', async (e) => {

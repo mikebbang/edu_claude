@@ -9,7 +9,7 @@
   --bad: #d14343; --bad-bg: #fbeaea; --good: #2f7fd8; --warn: #9a6200; --radius: 12px;
   --brand: #0abab5; --brand-deep: #07857f; --pink: #ff1a8c;
   --shadow: 0 1px 2px #17233a0a, 0 12px 30px -20px #17233a33;
-  --font: "Pretendard Variable", Inter, Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font: "Pretendard Variable", Pretendard, Inter, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", "Noto Sans KR", sans-serif;
   --scene-a: #f9fbfc; --scene-b: #eef2f5; --cloud: #9ba6b3; --px-pin: #b9c3ce; --px-shade: #07857f;
   color-scheme: light;
 }
@@ -25,6 +25,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+html { scrollbar-gutter: stable; }   /* Windows처럼 스크롤바가 자리를 차지해도 화면 폭이 바뀌지 않게 (차트가 늘어나 글자가 흐려지는 것 방지) */
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.5 var(--font); }
 h1 { font-size: 17px; margin: 0; font-weight: 600; }
@@ -38,19 +39,26 @@ button, input, select { font: inherit; color: inherit; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 
 /* ── 로고: UNIT_COMMONALITY (밑줄이 두 낱말을 잇는다) ─────────────────── */
-.uc-logo { display: inline-flex; align-items: baseline; font-family: "Poppins logo", Poppins, Montserrat, Inter, "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+.uc-logo { display: inline-flex; align-items: baseline; font-family: "Poppins logo", Poppins, Montserrat, Inter, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   font-weight: 800; letter-spacing: -.03em; line-height: 1; color: var(--brand); white-space: nowrap; }
 .uc-logo > span { display: inline-block; }
 .uc-logo .us { color: var(--pink); transform-origin: left center; }
 
 /* ── 분석 화면 ───────────────────────────────────────────────────── */
 .topbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 14px; padding: 10px 24px;
-  background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  background: var(--card); border-bottom: 1px solid var(--line); }   /* 흐림 효과를 쓰면 Windows에서 위쪽 바 글자가 흐려져 불투명하게 */
 .topbar .uc-logo { font-size: 20px; text-decoration: none; }
 .icon-btn { position: relative; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--ink2); background: transparent; border: 1px solid transparent; border-radius: 10px; }
 .icon-btn.busy::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--ring); box-shadow: 0 0 0 2px var(--card); animation: pulse .9s ease-in-out infinite alternate; }
 .icon-btn svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .icon-btn:hover, .icon-btn:focus-visible { color: var(--accent); background: var(--accent-bg); border-color: var(--accent-line); }
+/* 작은 그림 아이콘 (◀ ▶ ✕ ⓘ ↺ 같은 글자는 PC마다 다른 글꼴 · 이모지로 그려져서 그림으로 바꿈) */
+.ico-sm { flex: none; width: 15px; height: 15px; margin-right: 5px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button.icon-only { display: inline-grid; place-items: center; width: 32px; padding: 0; }
+button.icon-only .ico-sm { margin: 0; width: 16px; height: 16px; }
+.q-x, .toast .t-x { display: inline-grid; place-items: center; }
+.q-x .ico-sm, .toast .t-x .ico-sm { margin: 0; width: 14px; height: 14px; }
+.ico-info { width: 12px; height: 12px; vertical-align: -1px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .theme-btn .ico-sun { display: none; }
 [data-theme="dark"] .theme-btn .ico-sun { display: block; }
 [data-theme="dark"] .theme-btn .ico-moon { display: none; }
@@ -318,7 +326,7 @@ svg text { font-family: inherit; }
   display: flex; min-height: 100vh; min-height: 100svh; flex-direction: column; align-items: center;
   max-width: 1920px; margin: 0 auto; padding: max(32px, calc((100vh - 910px) / 2)) 28px 40px;
   color: var(--h-ink); background: var(--h-bg);
-  font-family: "Pretendard Variable", Inter, Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+  font-family: var(--font);
 }
 [data-theme="dark"] .home {
   --h-ink: #e6e9ef; --h-bg: #12161d; --h-card: #1b212b; --h-line: #2c3440; --h-line2: #3b4554; --h-ph: #7d8695; --h-icon: #9aa3b2; --h-chip: #aab3c2;
