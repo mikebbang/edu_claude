@@ -1,17 +1,19 @@
 'use strict';
 // 화면 동작
 //  · 시작 화면: Job ID로 실행 기록 찾기 · DB에서 가져와 분석 · raw.csv 올리기 · 최근 실행 · 사용자 가이드
-//  · 분석 화면: 데이터(Job ID 또는 raw.csv) · 설정 → Run(진행 상태) → funnel · 순위표(서로 연동, 여러 개 고르기) → 고른 대상마다 상세 카드.
+//  · 분석 화면: 데이터(Job ID 또는 raw.csv) · 설정 → Run(진행 상태) → funnel · 순위표(서로 연동, 여러 개 고르기)
+//    → 여러 개를 고르면 비교 띠 → 상세 하나(◀ ▶ · 비교 띠 · 묶음 버튼으로 대상을 바꿈).
 //    실행 기록에서 고르면 저장된 결과를 다시 계산하지 않고 연다
 // 주소: #run=<실행 id> 그 실행의 결과 · #analysis 분석 화면 · 그 밖은 시작 화면
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const PANEL_MAX = 8;                 // 상세 카드를 한 번에 그리는 최대 수 (순위가 높은 것부터)
+const CMP_MAX = 200;                 // 비교 띠에 그리는 최대 대상 수
 const S = {
   view: null, fileId: null, runId: null, res: null, hover: null, yMode: 'judg', sort: { key: 'rank', dir: 1 }, fn: null,
   brush: null, brushed: false, hintTimer: null,
-  picks: [], focus: null, panels: new Map(), ptSize: 4.5, files: [],
+  picks: [], focus: null, ptSize: 4.5, files: [],
+  cur: null, open: new Set(), panel: null, cmp: null, cmpSeq: 0, cmpPending: null,   // 상세에 보이는 대상 · 묶인 대상을 펼친 순위 · 상세 카드 · 비교 띠 값
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
   db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 raw.csv로만)
   fView: 'all', pendingDel: new Set(), toasts: [], conclText: '',   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
@@ -136,6 +138,8 @@ const HELP = {
   dvalue: 'good_bad가 없을 때의 순위 기준: 웨이퍼 수 × (이 경로 y_value 평균 − 전체 평균).',
   certainty: '기준선 대비 위치입니다. 1을 넘으면 기준선 밖(우연으로 보기 어려움)입니다. 예: 2.0 = 가운데 선에서 기준선까지 거리의 2배만큼 벗어남.',
   overlap: '두 대상의 웨이퍼를 합친 것 중 양쪽 모두에 있는 비율입니다. 100%면 웨이퍼가 똑같아 데이터로는 둘을 가릴 수 없습니다.',
+  rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
+  cmp: '빨간 점 = 이 경로, 회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼. 두 점이 멀수록 이 경로만 나쁩니다. 겹침 = 위쪽 순위와 웨이퍼가 겹치는 비율(50% 이상만 표시).',
 };
 
 // ── 파일 ───────────────────────────────────────────────────────────────
@@ -345,7 +349,7 @@ async function loadResult(id, token, note = '') {
   S.sort = { key: 'rank', dir: 1 };
   S.picks = [];
   S.focus = null;
-  clearPanels();
+  resetDetail();
   $('#results').hidden = false;
   setSetup(false);                                     // 결과가 화면 위로 오게 설정은 한 줄로 접는다
   syncEmpty();
@@ -369,7 +373,7 @@ async function loadResult(id, token, note = '') {
 function hideResults() {
   S.res = null;
   S.picks = [];
-  clearPanels();
+  resetDetail();
   $('#results').hidden = true;
   $('#details').hidden = true;
   $('#topnote').textContent = '';
@@ -421,7 +425,7 @@ function renderConcl() {
     : `${r.n}장의 y_value 평균 ${fmt.num(r.vmean)} (전체 ${fmt.num(vmu)})`;
   const others = R.slice(1, 3).map((x) => `${x.rank}위 ${x.step_name} ${x.path} (${hasBad ? `초과 bad ${fmt.signed(x.excess)}장` : `N × ΔValue ${fmt.num(x.excess)}`})`);
   const more = R.length > 3 ? ` 외 ${R.length - 3}개` : '';
-  const merged = r.merged.length ? ` · 웨이퍼가 같은 대상 ${r.merged.length}개가 1위 줄에 묶여 있습니다(상세에서 비교)` : '';
+  const merged = r.merged.length ? ` · 웨이퍼가 같은 대상 ${r.merged.length}개가 1위 줄에 묶여 있습니다(순위표의 "+${r.merged.length} 같은 웨이퍼"나 상세의 묶음 버튼으로 봄)` : '';
   $('#concl-body').innerHTML = `<div class="concl-main"><span class="concl-tag">1위</span><b>${esc(r.step_name)}</b>${r.desc ? `<span class="muted"> · ${esc(r.desc)}</span>` : ''}
       <span class="path inline">${pathHtml(r.parts)}</span></div>
     <div class="concl-stat">${stat} · <span class="help-term" data-help="certainty">Certainty</span> ${cert}</div>
@@ -771,9 +775,12 @@ function drawMarks() {
   const host = $('#fmarks');
   if (!f || !host || !S.res) return;
   const m = S.yMode;
-  const picked = new Set(S.picks.filter((p) => p.kind === 'rank').map((p) => p.i + 1));    // 순위 = 순위표 index + 1
-  const relKeys = new Set(S.picks.filter((p) => p.kind === 'rel').map((p) => p.t.key));
-  const dim = S.hover != null;
+  const picked = new Set(S.picks.map((i) => i + 1));                // 순위 = 순위표 index + 1
+  const cur = S.cur;
+  const hv = S.hover;
+  const isCur = (k) => !!cur && (cur.kind === 'rank' ? k.rank === cur.t.rank : k.key != null && k.key === cur.key);
+  const lit = (k) => !hv || k.rank === hv.rank || k.target === hv.rank || (hv.key != null && k.key === hv.key);
+  const hvRing = (k) => !!hv && (hv.key != null ? k.key === hv.key : k.rank != null && k.rank === hv.rank);
   const marks = S.res.funnel.marks;
   const order = marks.map((k, i) => i).sort((a, c) => (marks[a].rank ? 1 : 0) - (marks[c].rank ? 1 : 0));
   let s = '';
@@ -782,14 +789,24 @@ function drawMarks() {
     if (k[m] == null) continue;
     const x = f.xs(k.n).toFixed(1);
     const y = f.ys(k[m]).toFixed(1);
-    const op = dim && k.rank !== S.hover && k.target !== S.hover ? 0.25 : 1;
+    const op = lit(k) ? 1 : 0.25;
     s += `<circle cx="${x}" cy="${y}" r="${k.rank ? 5 : 3.5}" fill="${k.side === 'bad' ? C.bad : C.good}" opacity="${op}" data-i="${i}" style="cursor:${k.rank || k.target ? 'pointer' : 'default'}"/>`;
     if (k.rank && k.rank <= 10) s += `<text x="${(+x + 8).toFixed(1)}" y="${(+y - 7).toFixed(1)}" fill="${C.bad}" font-size="11" font-weight="600" opacity="${op}" pointer-events="none">${k.rank}</text>`;
+    const here = isCur(k);
+    if (here && (S.picks.length > 1 || cur.kind !== 'rank')) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="${C.ring}" stroke-opacity="0.35" stroke-width="5" pointer-events="none"/>`;   // 아래 상세에 보이는 대상
     if (k.rank != null && picked.has(k.rank)) s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ring}" stroke-width="2.2" pointer-events="none"/>`;
-    else if (relKeys.has(k.key)) s += `<circle cx="${x}" cy="${y}" r="8" fill="none" stroke="${C.ring}" stroke-width="1.8" stroke-dasharray="3 2" pointer-events="none"/>`;
-    else if (k.rank != null && k.rank === S.hover) s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ink}" stroke-width="1.3" pointer-events="none"/>`;
+    else if (here) s += `<circle cx="${x}" cy="${y}" r="8" fill="none" stroke="${C.ring}" stroke-width="1.8" stroke-dasharray="3 2" pointer-events="none"/>`;
+    else if (hvRing(k)) s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ink}" stroke-width="1.3" pointer-events="none"/>`;
   }
   host.innerHTML = s;
+}
+
+// 순위표 · 비교 띠에서 가리킨 대상: rank = 그 순위(점을 밝게), key = 묶인 대상 하나(그 점에 고리)
+const sameHover = (a, b) => (a ? a.rank : null) === (b ? b.rank : null) && (a ? a.key : null) === (b ? b.key : null);
+function setHover(hv) {
+  if (sameHover(hv, S.hover)) return;
+  S.hover = hv;
+  drawMarks();
 }
 
 function markTip(e) {
@@ -798,7 +815,7 @@ function markTip(e) {
   if (!c) { hideTip(); return; }
   const k = S.res.funnel.marks[+c.dataset.i];
   const who = k.rank ? `${k.rank}위 혐의 대상`
-    : k.merged ? `웨이퍼가 ${k.merged}위와 같아 그 줄에 묶인 대상 (상세의 '같은 웨이퍼로 묶인 대상'에서 비교)`
+    : k.merged ? `웨이퍼가 ${k.merged}위와 같아 그 줄에 묶인 대상 · 누르면 이 대상의 상세를 봅니다`
       : k.target ? `${k.target}위 대상에 포함 (같이 올라온 조합)`
         : k.side === 'bad' ? '기준선 밖 (혐의 대상과 묶이지 않음)' : 'good path (기준선보다 뚜렷하게 좋음)';
   showTip(`<b>${esc(k.label)}</b><br>${who}<br>웨이퍼 ${fmt.int(k.n)}장 · Order ${k.k}개 · Certainty ${k.certainty == null ? '–' : k.certainty.toFixed(2)}`
@@ -876,6 +893,7 @@ function clearPicks() {
   if (!S.picks.length) return;
   S.picks = [];
   S.focus = null;
+  S.cur = null;
   afterPicks();
   flashHint('선택을 풀었습니다 · 점을 누르거나 끌어서 다시 고르세요');
 }
@@ -914,24 +932,44 @@ function renderRanking() {
   const label = (c) => (c.key === 'excess' && !hasBad ? 'N × ΔValue' : c.label);   // good_bad가 없으면 순위 기준 = 웨이퍼 수 × Value 차이
   const help = (c) => `<span class="help" data-help="${c.key === 'excess' && !hasBad ? 'dvalue' : c.key}">${ICON_INFO}</span>`;
   const head = cols.map((c) => `<th class="${c.left ? 'l' : 'num'}" data-k="${c.key}">${label(c)}${help(c)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▴' : ' ▾') : ''}</th>`).join('');
-  const cell = (c, r) => {
+  const sw = Math.round((S.res.info.settings.same_wafers ?? 0.9) * 100);
+  const cert = (v) => (v == null ? '–' : v.toFixed(2));
+  const cell = (c, r, i) => {
     switch (c.key) {
       case 'rank': return `<td class="num">${r.rank}</td>`;
-      case 'path': return `<td class="l pathcell" title="${esc(stepText(r) + '\n' + r.path + (r.note ? '\n' + r.note : ''))}"><div class="step">${esc(stepText(r))}</div>`
-        + `<div class="path">${pathHtml(r.parts)}</div>${r.note ? `<div class="note">${esc(r.note)}</div>` : ''}</td>`;
+      case 'path': {
+        const open = S.open.has(i);
+        const grp = r.merged.length ? `<div class="grp-line"><button type="button" class="grp" data-grp="${i}" aria-expanded="${open}"
+          title="웨이퍼가 ${sw}% 이상 같아 이 줄에 묶인 대상 ${r.merged.length}개 ${open ? '접기' : '펼치기'}">+${r.merged.length} 같은 웨이퍼 ${open ? '▴' : '▾'}</button></div>` : '';
+        return `<td class="l pathcell" title="${esc(stepText(r) + '\n' + r.path + (r.note ? '\n' + r.note : ''))}"><div class="step">${esc(stepText(r))}</div>`
+          + `<div class="path">${pathHtml(r.parts)}</div>${grp}${r.note ? `<div class="note">${esc(r.note)}</div>` : ''}</td>`;
+      }
       case 'n': return `<td class="num">${fmt.int(r.n)}</td>`;
       case 'bad': case 'exp_bad': return `<td class="num">${fmt.pct(r[c.key])}</td>`;
       case 'excess': return `<td class="num">${hasBad ? fmt.signed(r.excess) : fmt.num(r.excess)}</td>`;
-      default: return `<td class="num">${r.certainty == null ? '–' : r.certainty.toFixed(2)}</td>`;
+      default: return `<td class="num">${cert(r.certainty)}</td>`;
     }
   };
-  const picked = new Set(S.picks.filter((p) => p.kind === 'rank').map((p) => p.i));
-  const body = sortedRows().map(({ r, i }) => `<tr data-i="${i}" class="${picked.has(i) ? 'on' : ''}">${cols.map((c) => cell(c, r)).join('')}</tr>`).join('');
+  const subCell = (c, t) => {                          // 묶인 대상 한 줄 (순위 칸 = ↳)
+    switch (c.key) {
+      case 'rank': return '<td class="num"><span class="sub-mark" aria-hidden="true">↳</span></td>';
+      case 'path': return `<td class="l pathcell" title="${esc(stepText(t) + '\n' + t.path)}"><div class="step"><span class="tag">겹침 ${fmt.pct(t.overlap, 0)}</span>${esc(stepText(t))}</div>`
+        + `<div class="path">${pathHtml(t.parts)}</div></td>`;
+      default: return cell(c, t, -1);
+    }
+  };
+  const multi = S.picks.length > 1;
+  const curId = S.cur ? S.cur.id : null;
+  const body = sortedRows().map(({ r, i }) => {
+    const cls = [S.picks.includes(i) ? 'on' : '', multi && curId === 'r' + r.rank ? 'cur' : ''].join(' ').trim();
+    const subs = S.open.has(i) ? r.merged.map((t) => `<tr class="sub${curId === 'x' + t.key ? ' cur' : ''}" data-i="${i}" data-key="${esc(t.key)}">${cols.map((c) => subCell(c, t)).join('')}</tr>`).join('') : '';
+    return `<tr data-i="${i}" class="${cls}">${cols.map((c) => cell(c, r, i)).join('')}</tr>${subs}`;
+  }).join('');
   $('#ranking').innerHTML = S.res.ranking.length
     ? `<table class="rank rk"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
     : '<div class="muted" style="padding:10px">기준선을 넘은 혐의 대상이 없습니다.</div>';
   $('#rank-sub').textContent = S.res.ranking.length
-    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${picked.size > 1 ? ` · ${picked.size}개 고름` : ''} · Ctrl/Shift+클릭으로 여러 개`
+    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${multi ? ` · ${S.picks.length}개 고름` : ''} · Ctrl/Shift+클릭으로 여러 개`
     : '';
 }
 
@@ -944,94 +982,277 @@ function scrollInto(wrap, tr) {
   if (r.top < top) wrap.scrollTop -= top - r.top;
   else if (r.bottom > w.bottom) wrap.scrollTop += r.bottom - w.bottom;
 }
-function revealRow(i) {
-  const tr = $(`#ranking tr[data-i="${i}"]`);
+function revealRow(i, key = null) {
+  const tr = key != null ? $(`#ranking tr[data-key="${CSS.escape(key)}"]`) : $(`#ranking tr[data-i="${i}"]:not(.sub)`);
   if (tr) scrollInto($('#ranking'), tr);
 }
 
-// ── 고르기: 순위표 · funnel에서 고른 대상 (여러 개) ──────────────────────
-// kind 'rank' = 순위표의 순위 하나, 'rel' = 순위 상세에서 연 관련 대상(같은 웨이퍼로 묶인 대상 · 다른 STEP 탓 의심 대상)
-const rankSpec = (i) => { const r = S.res.ranking[i]; return { id: 'r' + r.rank, kind: 'rank', i, step: r.step, items: r.items }; };
-const relSpec = (i, t, rel) => ({ id: 'x' + t.key, kind: 'rel', rel, i, step: t.step, items: t.items, t });
-const pickOrder = (a, b) => a.i - b.i || (a.kind === 'rank' ? 0 : 1) - (b.kind === 'rank' ? 0 : 1);
+// ── 고르기: 순위표 · funnel에서 고른 순위(여러 개)와 상세에 보이는 대상 하나 ─────────────
+// S.picks = 고른 순위(순위표 index, 순위 순). S.cur = 상세에 보이는 대상:
+//   kind 'rank' 순위 · 'member' 웨이퍼가 같아 그 순위에 묶인 대상 · 'cross' 그 순위의 다른 STEP 탓 의심 대상(순위표에 없는 것)
+const tRank = (i) => { const r = S.res.ranking[i]; return { id: 'r' + r.rank, kind: 'rank', i, key: r.key, step: r.step, items: r.items, t: r }; };
+const tSub = (i, t, kind) => ({ id: 'x' + t.key, kind, i, key: t.key, step: t.step, items: t.items, t });
 
-function setPicks(list, add = false) {
-  const next = add ? S.picks.slice() : [];
-  for (const i of list) if (!next.some((p) => p.kind === 'rank' && p.i === i)) next.push(rankSpec(i));
-  S.picks = next.sort(pickOrder);
+// 순위 하나와 그 순위에 얽힌 대상: [순위, 묶인 대상…, 다른 STEP 탓 의심 대상]
+function groupOf(i) {
+  const r = S.res.ranking[i];
+  const out = [tRank(i), ...r.merged.map((t) => tSub(i, t, 'member'))];
+  if (r.cross && !S.res.ranking.some((x) => x.key === r.cross.key)) out.push(tSub(i, r.cross, 'cross'));
+  return out;
+}
+
+// 비교 띠에 나오는 대상 (고른 순위마다 그 순위와 얽힌 대상, 순위 순)
+function stripItems() {
+  const seen = new Set();
+  return S.picks.flatMap(groupOf).filter((t) => !seen.has(t.id) && seen.add(t.id)).slice(0, CMP_MAX);
+}
+
+// list의 순위를 고른다(add면 더한다). cur = 상세에 보일 대상 (없으면 고른 것 중 순위가 가장 높은 것, 더할 때는 지금 보던 것 그대로)
+function setPicks(list, add = false, cur = null) {
+  const next = new Set(add ? S.picks : []);
+  for (const i of list) next.add(i);
+  S.picks = [...next].sort((a, b) => a - b);
+  if (cur) S.cur = cur;
+  else if (!(add && S.cur && S.picks.includes(S.cur.i))) S.cur = S.picks.length ? tRank(list.length ? Math.min(...list) : S.picks[0]) : null;
   afterPicks();
 }
 
 function togglePick(i) {
-  if (S.picks.some((p) => p.kind === 'rank' && p.i === i)) S.picks = S.picks.filter((p) => p.i !== i);   // 그 순위에서 연 관련 대상도 함께 닫음
-  else S.picks = [...S.picks, rankSpec(i)].sort(pickOrder);
-  afterPicks();
-}
-
-function addRel(i, t, rel) {
-  const j = S.res.ranking.findIndex((r) => r.key === t.key);         // 순위표에 있는 대상이면 그 순위로 연다
-  if (j >= 0) setPicks([j], true);
-  else if (!S.picks.some((p) => p.id === 'x' + t.key)) {
-    S.picks = [...S.picks, relSpec(i, t, rel)].sort(pickOrder);
-    afterPicks();
+  if (S.picks.includes(i)) {
+    S.picks = S.picks.filter((x) => x !== i);
+    if (S.cur && S.cur.i === i) {                       // 보던 순위를 빼면 다음 순위(없으면 마지막 순위)를 본다
+      const nx = S.picks.find((x) => x > i) ?? S.picks[S.picks.length - 1];
+      S.cur = nx == null ? null : tRank(nx);
+    }
+  } else {
+    S.picks = [...S.picks, i].sort((a, b) => a - b);
+    S.cur = tRank(i);
   }
-  const p = S.panels.get(j >= 0 ? 'r' + (j + 1) : 'x' + t.key);
-  if (p) p.el.scrollIntoView({ behavior: smooth(), block: 'start' });
+  afterPicks();
 }
 
-function closePick(id) {
-  const p = S.picks.find((x) => x.id === id);
-  if (!p) return;
-  S.picks = p.kind === 'rank' ? S.picks.filter((x) => x.i !== p.i) : S.picks.filter((x) => x.id !== id);
+// 순위 i에 묶인 대상(key)을 상세로 본다. add면 지금 고른 순위는 그대로 두고 i를 더한다
+function focusMember(i, key, add = false) {
+  const t = groupOf(i).find((x) => x.key === key);
+  S.focus = i;
+  if (t && t.kind === 'member') S.open.add(i);
+  setPicks([i], add, t || null);
+  revealRow(i, t && t.kind === 'member' ? key : null);
+}
+
+// 고른 순위는 그대로 두고 상세에 보일 대상만 바꾼다 (비교 띠 · 묶음 버튼 · ◀ ▶)
+function setFocus(t) {
+  if (t.kind === 'member') S.open.add(t.i);
+  S.cur = t;
+  S.focus = t.i;
   afterPicks();
+  revealRow(t.i, t.kind === 'member' ? t.key : null);
+}
+
+// ◀ ▶: 하나만 골랐으면 순위를, 여러 개면 비교 띠의 대상을 차례로
+function stepTarget(d) {
+  const sp = S.cur;
+  if (!sp || !S.res) return;
+  if (S.picks.length > 1) {
+    const items = stripItems();
+    const t = items[items.findIndex((x) => x.id === sp.id) + d];
+    if (t) setFocus(t);
+    return;
+  }
+  const i = sp.i + d;
+  if (i < 0 || i >= S.res.ranking.length) return;
+  S.focus = i;
+  setPicks([i]);
+  revealRow(i);
 }
 
 function afterPicks() {
   renderRanking();
   drawMarks();
-  syncPanels();
+  renderStrip();
+  showPanel();
 }
 
-// ── 상세 카드 (고른 대상마다 하나) ───────────────────────────────────────
-function clearPanels() {
-  for (const p of S.panels.values()) p.el.remove();
-  S.panels.clear();
-}
+// ── 비교 띠: 여러 순위를 골랐을 때 대상마다 한 줄. 회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼, 빨간 점 = 이 경로 ──
+const cmpKey = (items) => S.runId + ':' + items.map((t) => t.id).join(',');
 
-function syncPanels() {
-  const box = $('#details');
-  const want = S.picks.slice(0, PANEL_MAX);
-  const ids = new Set(want.map((p) => p.id));
-  for (const [id, p] of S.panels) if (!ids.has(id)) { p.el.remove(); S.panels.delete(id); }
-  for (const sp of want) {
-    let p = S.panels.get(sp.id);
-    if (!p) {
-      p = makePanel(sp);
-      S.panels.set(sp.id, p);
-      loadPanel(p);
-    }
-    box.appendChild(p.el);
+async function renderStrip() {
+  const box = $('#cmp');
+  if (!S.res || S.picks.length < 2) { box.hidden = true; return; }
+  box.hidden = false;
+  const items = stripItems();
+  const key = cmpKey(items);
+  if (S.cmp && S.cmp.key === key) { drawStrip(items, S.cmp.data); return; }
+  drawStrip(items, null);
+  if (S.cmpPending === key) return;                    // 같은 대상으로 이미 묻는 중
+  S.cmpPending = key;
+  const seq = ++S.cmpSeq;
+  try {
+    const data = await post(`/api/runs/${S.runId}/compare`, { targets: items.map((t) => ({ step: t.step, items: t.items })) });
+    if (seq !== S.cmpSeq) return;
+    S.cmp = { key, data };
+    drawStrip(items, data);
+  } catch (e) {
+    if (seq === S.cmpSeq) $('#cmp-body').innerHTML = `<div class="errtxt">비교를 불러오지 못했습니다: ${esc(e.message)}</div>`;
+  } finally {
+    if (seq === S.cmpSeq) S.cmpPending = null;
   }
-  const note = $('#details-note');
-  note.hidden = S.picks.length <= PANEL_MAX;
-  note.textContent = `고른 ${S.picks.length}개 중 순위가 높은 ${PANEL_MAX}개만 상세를 그립니다.`;
-  box.hidden = !want.length;
-  for (const p of S.panels.values()) renderHead(p);
 }
 
-function makePanel(sp) {
+function drawStrip(items, data) {
+  const hasBad = S.res.info.has_bad;
+  const rows = data ? data.targets : null;
+  const ov = data ? data.overlap : null;
+  const [vk, rk] = hasBad ? ['bad', 'rest_bad'] : ['vmean', 'rest_vmean'];
+  let lo = 0;
+  let hi = 1;
+  if (rows) {                                           // 모든 줄이 같은 눈금 (bad는 0부터)
+    const vals = rows.flatMap((r) => [r[vk], r[rk]]).filter((v) => v != null);
+    if (hasBad) hi = Math.max(0.02, ...vals) * 1.08;
+    else if (vals.length) {
+      lo = Math.min(...vals);
+      hi = Math.max(...vals);
+      const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.05 || 1;
+      lo -= pad;
+      hi += pad;
+    }
+  }
+  const ticks = rows ? linTicks(lo, hi, 5) : [];
+  const stepPct = ticks.length > 1 ? (ticks[1] - ticks[0]) * 100 : 1;
+  const tickLabel = (v) => (hasBad ? (v * 100).toFixed(stepPct >= 1 ? 0 : stepPct >= 0.1 ? 1 : 2) + '%' : fmt.tick(v));
+  const X = (v) => ((v - lo) / (hi - lo || 1)) * 100;
+  const P = (v) => X(v).toFixed(2) + '%';
+  const grid = ticks.map((v) => `<span class="cmp-gl" style="left:${P(v)}"></span>`).join('');
+  const dots = (a, b) => {                              // 회색 점(다른 Unit) — 선 — 빨간 점(이 경로)
+    let h = '';
+    if (a != null && b != null) h += `<span class="cmp-link" style="left:${P(Math.min(a, b))};width:${(X(Math.max(a, b)) - X(Math.min(a, b))).toFixed(2)}%"></span>`;
+    if (b != null) h += `<span class="cmp-dot rest" style="left:${P(b)}"></span>`;
+    if (a != null) h += `<span class="cmp-dot this" style="left:${P(a)}"></span>`;
+    return h;
+  };
+  const curId = S.cur ? S.cur.id : null;
+  const rankAt = (i) => items.findIndex((x) => x.kind === 'rank' && x.i === i);
+  const badge = (t, j) => {                             // 웨이퍼 겹침: 묶인 대상 = 그 순위와, 순위 = 위쪽 순위 중 가장 많이 겹치는 것(50% 이상)
+    if (!ov) return '';
+    let v = null;
+    let rank = null;
+    if (t.kind !== 'rank') { v = ov[j][rankAt(t.i)]; rank = S.res.ranking[t.i].rank; } else {
+      items.forEach((x, k) => {
+        if (k < j && x.kind === 'rank' && ov[j][k] >= 0.5 && (v == null || ov[j][k] > v)) { v = ov[j][k]; rank = S.res.ranking[x.i].rank; }
+      });
+    }
+    return v == null ? '' : `<span class="ovb${v >= 0.9 ? ' hi' : ''}">${rank}위와 웨이퍼 ${fmt.pct(v, 0)} 겹침</span>`;
+  };
+  const body = items.map((t, j) => {
+    const r = rows ? rows[j] : null;
+    const sub = t.kind !== 'rank';
+    const name = sub ? `<span class="tag">${t.kind === 'member' ? '같은 웨이퍼' : '다른 STEP 의심'}</span>` : `<span class="no">${S.res.ranking[t.i].rank}위</span>`;
+    const num = !r ? '<span class="muted">…</span>'
+      : (hasBad ? `<b class="badtxt">${fmt.pct(r.bad)}</b><span class="muted"> vs ${fmt.pct(r.rest_bad)}</span>` : `<b>${fmt.num(r.vmean)}</b><span class="muted"> vs ${fmt.num(r.rest_vmean)}</span>`)
+        + `<span class="muted"> · ${fmt.int(r.n)}장</span>`;
+    return `<div class="cmp-row${sub ? ' sub' : ''}${t.id === curId ? ' cur' : ''}" role="row" tabindex="0" data-id="${esc(t.id)}" data-j="${j}" aria-current="${t.id === curId}">
+      <div class="cmp-name" role="cell" title="${esc(stepText(t.t) + '\n' + t.t.path)}">${name}<span class="step">${esc(t.t.step_name)}</span><span class="cmp-path">${esc(t.t.path)}</span></div>
+      <div class="cmp-track" role="cell">${grid}${r ? dots(r[vk], r[rk]) : ''}</div>
+      <div class="cmp-num" role="cell">${num}</div>
+      <div class="cmp-ov" role="cell">${badge(t, j)}</div></div>`;
+  }).join('');
+  const axis = `<div class="cmp-row cmp-axis" aria-hidden="true"><div class="cmp-name muted small">대상</div>
+    <div class="cmp-track">${ticks.map((v) => `<span class="cmp-tk" style="left:${P(v)}">${tickLabel(v)}</span>`).join('')}</div>
+    <div class="cmp-num muted small">${hasBad ? 'bad: 이 경로 vs 다른 Unit' : 'y_value 평균: 이 경로 vs 다른 Unit'}</div>
+    <div class="cmp-ov muted small">웨이퍼 겹침<span class="help" data-help="overlap">${ICON_INFO}</span></div></div>`;
+  const had = document.activeElement && document.activeElement.closest ? document.activeElement.closest('#cmp-body .cmp-row[data-id]') : null;
+  const box = $('#cmp-body');
+  box.innerHTML = `<div role="table" aria-label="고른 대상 비교">${axis}${body}</div>`
+    + (S.picks.flatMap(groupOf).length > items.length ? `<div class="muted small cmp-more">대상이 많아 앞의 ${CMP_MAX}개만 그렸습니다.</div>` : '');
+  if (had) { const el = $(`.cmp-row[data-id="${CSS.escape(had.dataset.id)}"]`, box); if (el) el.focus({ preventScroll: true }); }
+  $('#cmp-sub').textContent = `${S.picks.length}개 순위 · ${items.length}개 대상 · ${hasBad ? 'bad 비율 = bad 웨이퍼 ÷ 웨이퍼' : 'y_value 평균'} · 줄을 누르면 아래 상세가 그 대상으로 바뀝니다`;
+}
+
+// 비교 띠 한 줄의 수 (점 위에 올리면)
+function stripTip(j, e) {
+  const items = stripItems();
+  const t = items[j];
+  const D = S.cmp && S.cmp.key === cmpKey(items) ? S.cmp.data : null;
+  const r = D && D.targets[j];
+  if (!t || !r) { hideTip(); return; }
+  const row = S.res.ranking[t.i];
+  const who = t.kind === 'rank' ? `${row.rank}위` : t.kind === 'member' ? `${row.rank}위에 묶인 대상` : `${row.rank}위 · 다른 STEP 탓 의심`;
+  const v = (b, m) => (D.has_bad ? `bad ${fmt.pct(b)}` : `y_value 평균 ${fmt.num(m)}`);
+  const diff = D.has_bad && r.bad != null && r.rest_bad != null ? `<br>차이 ${fmt.signed((r.bad - r.rest_bad) * 100, 1)}%p` : '';
+  showTip(`<b>${who} · ${esc(t.t.step_name)} ${esc(t.t.path)}</b>`
+    + `<br><span class="dot" style="background:${C.bad}"></span> 이 경로 ${fmt.int(r.n)}장 · ${v(r.bad, r.vmean)}`
+    + `<br><span class="dot" style="background:${C.muted}"></span> 같은 Order를 다른 Unit으로 지난 웨이퍼 ${fmt.int(r.rest_n)}장 · ${v(r.rest_bad, r.rest_vmean)}${diff}`, e.clientX, e.clientY);
+}
+
+function bindStrip() {
+  const body = $('#cmp-body');
+  const rowOf = (e) => e.target.closest('.cmp-row[data-id]');
+  const itemOf = (el) => stripItems().find((x) => x.id === el.dataset.id);
+  const pick = (el) => { const t = itemOf(el); if (t && (!S.cur || S.cur.id !== t.id)) setFocus(t); };
+  body.addEventListener('click', (e) => { if (!e.target.closest('.help')) { const r = rowOf(e); if (r) pick(r); } });
+  body.addEventListener('keydown', (e) => {
+    const r = rowOf(e);
+    if (!r) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(r); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {     // 위아래 화살표로 줄을 옮겨 가며 본다
+      e.preventDefault();
+      const sib = e.key === 'ArrowDown' ? r.nextElementSibling : r.previousElementSibling;
+      if (sib && sib.dataset.id) { sib.focus(); pick(sib); }
+    }
+  });
+  body.addEventListener('mouseover', (e) => {
+    const r = rowOf(e);
+    const t = r ? itemOf(r) : null;
+    setHover(t ? { rank: S.res.ranking[t.i].rank, key: t.kind === 'rank' ? null : t.key } : null);
+  });
+  body.addEventListener('mouseleave', () => { setHover(null); hideTip(); });
+  body.addEventListener('mousemove', (e) => {
+    const r = rowOf(e);
+    if (r && e.target.closest('.cmp-track')) stripTip(+r.dataset.j, e);
+    else if (!e.target.closest('[data-help]')) hideTip();
+  });
+}
+
+// ── 상세: 대상 하나를 크기를 고정한 2 × 2로 ─────────────────────────────
+function resetDetail() {
+  if (S.panel) S.panel.el.remove();
+  S.panel = null;
+  S.cur = null;
+  S.open = new Set();
+  S.cmp = null;
+  S.cmpPending = null;
+  S.cmpSeq++;
+  $('#cmp').hidden = true;
+}
+
+function showPanel() {
+  const box = $('#details');
+  box.hidden = !S.cur;
+  if (!S.cur) return;
+  if (!S.panel) {
+    S.panel = makePanel();
+    box.appendChild(S.panel.el);
+  }
+  const p = S.panel;
+  const changed = !p.spec || p.spec.id !== S.cur.id;
+  p.spec = S.cur;
+  if (changed) {                                        // 대상이 바뀌면 원래 경로로 다시 연다 (탐색 중이던 선택은 버림)
+    p.sel = p.spec.items.map((x) => x.slice());
+    p.det = null;
+    loadPanel(p);
+  }
+  renderHead(p);
+}
+
+function makePanel() {
   const el = $('#panel-tpl').content.firstElementChild.cloneNode(true);
-  const p = { id: sp.id, spec: sp, el, sel: sp.items.map((x) => x.slice()), det: null, cMode: 'hi', pMode: 'judg', seq: 0 };
-  el.dataset.id = sp.id;
+  const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pMode: 'judg', seq: 0 };
   const size = $('[data-a=size]', el);
   size.value = S.ptSize;
-  size.addEventListener('input', () => {             // 점 크기는 모든 카드에 같이
+  size.addEventListener('input', () => {
     S.ptSize = +size.value;
     store.set('uc.ptSize2', S.ptSize);
-    for (const q of S.panels.values()) {
-      if (q !== p) $('[data-a=size]', q.el).value = S.ptSize;
-      if (q.det) renderScatter(q);
-    }
+    if (p.det) renderScatter(p);
   });
   if (!S.res.info.has_bad) $('[data-r=pseg] button[data-v=bad]', el).disabled = true;
   bindAxisTips($('[data-r=pseg]', el));
@@ -1053,7 +1274,7 @@ function scatterTip(p, e) {
   const w = D.wafers;
   const i = +c.dataset.i;
   const name = w.wid ? `${esc(w.lots[w.li[i]])} · wafer ${esc(w.wid[i])}` : `웨이퍼 ${i + 1} (이 실행은 웨이퍼 번호를 저장하지 않았습니다)`;
-  showTip(`<b>${name}</b><br>${w.g[i] === D.sel_group ? '선택 경로' : '다른 경로'} ${esc(D.groups[w.g[i]].label)}`
+  showTip(`<b>${name}</b><br>${w.g[i] === D.sel_group ? '선택 경로' : '다른 Unit 조합'} ${esc(D.groups[w.g[i]].label)}`
     + `<br>tkin_time (${esc(D.time_order)}) ${isoTime(w.t[i]).slice(0, 16)}<br>y_value ${fmt.num(w.v[i])}`
     + (D.has_bad ? ` · ${w.b[i] ? '<span class="badtxt">bad</span>' : 'good'}` : ''), e.clientX, e.clientY);
 }
@@ -1083,29 +1304,30 @@ function rankingCsv() {
 function panelClick(p, e) {
   const a = e.target.closest('[data-a]');
   const act = a ? a.dataset.a : null;
-  if (act === 'prev' || act === 'next') {
-    const i = p.spec.i + (act === 'prev' ? -1 : 1);
-    if (i < 0 || i >= S.res.ranking.length) return;
-    S.focus = i;
-    setPicks([i]);
-    revealRow(i);
-    return;
-  }
-  if (act === 'close') { closePick(p.id); return; }
+  if (act === 'prev' || act === 'next') { stepTarget(act === 'prev' ? -1 : 1); return; }
+  if (act === 'close') { togglePick(p.spec.i); return; }
   if (act === 'wcsv') { if (p.det) waferCsv(p); return; }
   if (act === 'reset') { p.sel = p.spec.items.map((x) => x.slice()); loadPanel(p); return; }
-  const seg = e.target.closest('[data-r=cseg] button, [data-r=pseg] button');
-  if (seg) {
-    if (seg.disabled || !p.det) return;
-    if (seg.parentElement.dataset.r === 'cseg') { p.cMode = seg.dataset.v; renderScatter(p); } else { p.pMode = seg.dataset.v; renderPeers(p); }
-    setSeg(seg.parentElement, seg.dataset.v);
+  const g = e.target.closest('[data-gid]');                // 묶음 버튼 · 묶인 대상 표의 "보기"
+  if (g) {
+    const t = groupOf(p.spec.i).find((x) => x.id === g.dataset.gid);
+    if (t && t.id !== p.spec.id) setFocus(t);
     return;
   }
-  const rel = e.target.closest('[data-rel]');
-  if (rel) {
-    const row = S.res.ranking[p.spec.i];
-    const t = rel.dataset.rel === 'cross' ? row.cross : row.merged.find((x) => x.key === rel.dataset.key);
-    if (t) addRel(p.spec.i, t, rel.dataset.rel);
+  const jr = e.target.closest('[data-rank]');              // 다른 STEP 탓 의심 대상이 순위표에 있으면 그 순위를 더해 본다
+  if (jr) {
+    const j = +jr.dataset.rank;
+    S.focus = j;
+    setPicks([j], true, tRank(j));
+    revealRow(j);
+    return;
+  }
+  if (!p.det) return;                                      // 새 대상을 불러오는 중에는 칸 · 칩을 누르지 않음
+  const seg = e.target.closest('[data-r=cseg] button, [data-r=pseg] button');
+  if (seg) {
+    if (seg.disabled) return;
+    if (seg.parentElement.dataset.r === 'cseg') { p.cMode = seg.dataset.v; renderScatter(p); } else { p.pMode = seg.dataset.v; renderPeers(p); }
+    setSeg(seg.parentElement, seg.dataset.v);
     return;
   }
   const chip = e.target.closest('.chip');
@@ -1135,11 +1357,11 @@ async function loadPanel(p) {
   p.el.classList.add('loading');
   try {
     const det = await post(`/api/runs/${rid}/detail`, { step: p.spec.step, items: p.sel });
-    if (rid !== S.runId || seq !== p.seq || S.panels.get(p.id) !== p) return;
+    if (rid !== S.runId || seq !== p.seq || S.panel !== p) return;
     p.det = det;
     renderPanel(p);
   } catch (e) {
-    if (seq === p.seq && S.panels.get(p.id) === p) $('[data-r=dstat]', p.el).innerHTML = `<span class="errtxt">상세를 불러오지 못했습니다: ${esc(e.message)}</span>`;
+    if (seq === p.seq && S.panel === p) $('[data-r=dstat]', p.el).innerHTML = `<span class="errtxt">상세를 불러오지 못했습니다: ${esc(e.message)}</span>`;
   } finally {
     if (seq === p.seq) p.el.classList.remove('loading');
   }
@@ -1158,19 +1380,43 @@ function renderPanel(p) {
 
 function renderHead(p) {
   const sp = p.spec;
+  if (!sp) return;
   const row = S.res.ranking[sp.i];
-  const t = sp.kind === 'rank' ? row : sp.t;
-  const single = S.picks.length === 1 && sp.kind === 'rank';      // 하나만 볼 때는 ◀ ▶로 순위를 넘기고, 여럿일 때는 카드마다 닫기
+  const t = sp.t;
+  const multi = S.picks.length > 1;                     // 하나만 골랐으면 ◀ ▶로 순위를, 여러 개면 비교 띠의 대상을 넘긴다
+  const items = multi ? stripItems() : [];
+  const at = items.findIndex((x) => x.id === sp.id);
   const [prev, next, close] = ['prev', 'next', 'close'].map((a) => $(`[data-a=${a}]`, p.el));
-  prev.hidden = !single;
-  next.hidden = !single;
-  close.hidden = single;
-  prev.disabled = sp.i === 0;
-  next.disabled = sp.i >= S.res.ranking.length - 1;
-  const title = sp.kind === 'rank' ? `${row.rank}위` : sp.rel === 'merged' ? `${row.rank}위에 묶인 대상` : `${row.rank}위 · 다른 STEP 탓 의심 대상`;
+  close.hidden = !multi;
+  prev.disabled = multi ? at <= 0 : sp.i === 0;
+  next.disabled = multi ? at < 0 || at >= items.length - 1 : sp.i >= S.res.ranking.length - 1;
+  for (const [b, w] of [[prev, '이전'], [next, '다음']]) {
+    const l = `${w} ${multi ? '대상' : '순위'}`;
+    b.title = l;
+    b.setAttribute('aria-label', l);
+  }
+  $('[data-r=count]', p.el).textContent = multi ? (at >= 0 ? `고른 대상 ${at + 1} / ${items.length}` : '') : `순위 ${row.rank} / ${S.res.ranking.length}`;
+  const title = sp.kind === 'rank' ? `${row.rank}위` : sp.kind === 'member' ? `${row.rank}위에 묶인 대상` : `${row.rank}위 · 다른 STEP 탓 의심`;
+  const rel = sp.kind === 'rank' ? '' : ` · ${row.rank}위와 웨이퍼 ${fmt.pct(t.overlap, 0)} 겹침`;
   $('[data-r=dh]', p.el).innerHTML = `<span class="t">${title} · STEP ${esc(stepText(t))}</span>
-    <span class="muted"> · ${sp.kind === 'rank' ? '원래 경로' : '경로'} ${esc(t.path)} · Certainty ${t.certainty == null ? '–' : t.certainty.toFixed(2)}</span>`;
+    <span class="muted"> · ${sp.kind === 'rank' ? '원래 경로' : '경로'} ${esc(t.path)}${rel} · Certainty ${t.certainty == null ? '–' : t.certainty.toFixed(2)}</span>`;
   p.el.classList.toggle('rel', sp.kind !== 'rank');
+  renderGroup(p);
+}
+
+// 묶음 버튼: 이 순위와 얽힌 대상(대표 · 같은 웨이퍼로 묶인 대상 · 다른 STEP 탓 의심)을 바꿔 본다
+function renderGroup(p) {
+  const box = $('[data-r=group]', p.el);
+  const sp = p.spec;
+  const g = groupOf(sp.i);
+  if (g.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
+  const rank = S.res.ranking[sp.i].rank;
+  const name = (x) => (g.filter((y) => y.t.step_name === x.t.step_name).length > 1 ? `${x.t.step_name} ${x.t.path}` : x.t.step_name);
+  const label = (x) => (x.kind === 'rank' ? `${name(x)} · 대표` : x.kind === 'member' ? `${name(x)} · 겹침 ${fmt.pct(x.t.overlap, 0)}` : `다른 STEP 의심 · ${name(x)}`);
+  box.innerHTML = `<span class="muted small">${rank}위 묶음</span><span class="seg small gsw" role="group" aria-label="${rank}위와 얽힌 대상">`
+    + g.map((x) => `<button type="button" data-gid="${esc(x.id)}" class="${x.id === sp.id ? 'on' : ''}" aria-pressed="${x.id === sp.id}" title="${esc(stepText(x.t) + '\n' + x.t.path)}">${esc(label(x))}</button>`).join('')
+    + '</span>';
+  box.hidden = false;
 }
 
 const sameSel = (a, b) => JSON.stringify([...a].sort((x, y) => x[0] - y[0])) === JSON.stringify([...b].sort((x, y) => x[0] - y[0]));
@@ -1180,7 +1426,7 @@ function renderStat(p) {
   const orig = sameSel(p.sel, p.spec.items);
   const sel = D.selection;
   $('[data-r=dstat]', p.el).innerHTML = `지금 선택 <b>${esc(sel.label)}</b> · 웨이퍼 <b>${fmt.int(sel.n)}</b>장`
-    + (D.has_bad ? ` · bad <span class="badtxt">${fmt.pct(sel.bad)}</span> (같은 Order를 지난 나머지 ${fmt.int(sel.rest_n)}장 ${fmt.pct(sel.rest_bad)})` : '')
+    + (D.has_bad ? ` · bad <span class="badtxt">${fmt.pct(sel.bad)}</span> (<span class="help-term" data-help="rest">같은 Order를 다른 Unit으로 지난</span> ${fmt.int(sel.rest_n)}장 ${fmt.pct(sel.rest_bad)})` : '')
     + ` · y_value 평균 ${fmt.num(sel.vmean)} · <span class="help-term" data-help="certainty">Certainty</span> ${sel.certainty == null ? '–' : sel.certainty.toFixed(2)}`
     + (orig ? '' : '<span class="badge">탐색 중 (판정 아님)</span>');
   $('[data-r=chips]', p.el).innerHTML = p.sel.slice().sort((a, b) => a[0] - b[0]).map(([q, u]) => {
@@ -1193,40 +1439,47 @@ function renderStat(p) {
 function diffText(t, hasBad) {
   if (!t.only_n && !t.ref_only_n) return '없음 (웨이퍼가 똑같음)';
   const part = (n, b) => `${fmt.int(n)}장${hasBad && n ? ` (bad ${fmt.pct(b)})` : ''}`;
-  return `이 대상에만 ${part(t.only_n, t.only_bad)} · 이 줄 대상에만 ${part(t.ref_only_n, t.ref_only_bad)}`;
+  return `이 대상에만 ${part(t.only_n, t.only_bad)} · 대표에만 ${part(t.ref_only_n, t.ref_only_bad)}`;
 }
 
-// 순위 하나와 얽힌 다른 대상: 웨이퍼가 같아 이 줄에 묶인 대상 · 다른 STEP 탓 의심 대상
+// 순위 하나와 얽힌 다른 대상: 웨이퍼가 같아 이 줄에 묶인 대상 · 다른 STEP 탓 의심 대상 (지금 보는 대상은 '보는 중')
 function renderRelated(p) {
   const box = $('[data-r=related]', p.el);
-  const row = S.res.ranking[p.spec.i];
-  if (p.spec.kind !== 'rank' || (!row.merged.length && !row.cross)) { box.hidden = true; box.innerHTML = ''; return; }
+  const sp = p.spec;
+  const row = S.res.ranking[sp.i];
+  if (!row.merged.length && !row.cross) { box.hidden = true; box.innerHTML = ''; return; }
   const hasBad = S.res.info.has_bad;
   const sw = S.res.info.settings.same_wafers;
   const cert = (v) => (v == null ? '–' : v.toFixed(2));
   const ex = (v) => (hasBad ? fmt.signed(v, 1) : fmt.num(v));
   const metric = hasBad ? '초과 bad' : 'N × ΔValue';
+  const act = (id) => (id === sp.id ? '<span class="muted small">보는 중</span>' : `<button type="button" class="ghost mini" data-gid="${esc(id)}">보기</button>`);
   let h = '';
   if (row.merged.length) {
-    const tr = (t, rep) => `<tr${rep ? ' class="rep"' : ''}>
-      <td class="l pathcell" title="${esc(stepText(t) + '\n' + t.path)}"><div class="step">${rep ? '<span class="tag">이 줄</span> ' : ''}${esc(stepText(t))}</div><div class="path">${pathHtml(t.parts)}</div></td>
+    const tr = (t, rep) => {
+      const id = rep ? 'r' + row.rank : 'x' + t.key;
+      return `<tr class="${rep ? 'rep' : ''}${id === sp.id ? ' cur' : ''}">
+      <td class="l pathcell" title="${esc(stepText(t) + '\n' + t.path)}"><div class="step">${rep ? '<span class="tag">대표</span> ' : ''}${esc(stepText(t))}</div><div class="path">${pathHtml(t.parts)}</div></td>
       <td class="num">${fmt.int(t.n)}</td><td class="num">${rep ? '–' : fmt.pct(t.overlap, 0)}</td>${hasBad ? `<td class="num">${fmt.pct(t.bad)}</td>` : ''}
       <td class="num">${ex(t.excess)}</td><td class="num">${cert(t.certainty)}</td>
       <td class="l diff">${rep ? '' : diffText(t, hasBad)}</td>
-      <td class="num">${rep ? '' : `<button type="button" class="ghost mini" data-rel="merged" data-key="${esc(t.key)}">상세 열기</button>`}</td></tr>`;
-    h += `<div class="rel-head"><b>같은 웨이퍼로 이 줄에 묶인 대상</b><span class="muted small">웨이퍼가 ${Math.round((sw ?? 0.9) * 100)}% 이상 같은 대상은 순위표에 한 줄로 나옵니다</span></div>
+      <td class="num">${act(id)}</td></tr>`;
+    };
+    h += `<div class="rel-head"><b>같은 웨이퍼로 ${row.rank}위에 묶인 대상</b><span class="muted small">웨이퍼가 ${Math.round((sw ?? 0.9) * 100)}% 이상 같은 대상은 순위표에 한 줄로 나오고, 그 줄의 "+${row.merged.length} 같은 웨이퍼"로 펼칩니다</span></div>
       <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">겹침<span class="help" data-help="overlap">${ICON_INFO}</span></th>${hasBad ? '<th class="num">Bad %</th>' : ''}
       <th class="num">${hasBad ? 'Excess bad' : 'N × ΔValue'}</th><th class="num">Certainty</th><th class="l">서로 다른 웨이퍼</th><th></th></tr></thead>
       <tbody>${tr(row, true)}${row.merged.map((t) => tr(t, false)).join('')}</tbody></table></div>
-      <div class="muted small rel-why">순위표에는 ${metric}가 큰 쪽이 올라오고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)이 올라옵니다.
+      <div class="muted small rel-why">대표는 ${metric}가 큰 쪽이고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)입니다.
       겹침이 100%면 데이터로는 어느 STEP 탓인지 가릴 수 없고, 100%보다 작으면 '서로 다른 웨이퍼'의 bad가 차이를 만듭니다.</div>`;
   }
   if (row.cross) {
     const c = row.cross;
+    const j = S.res.ranking.findIndex((x) => x.key === c.key);
+    const btn = j >= 0 ? `<button type="button" class="ghost mini" data-rank="${j}">${j + 1}위로 더해 보기</button>` : act('x' + c.key);
     h += `<div class="rel-head"><b>다른 STEP 탓 의심</b><span class="muted small">이 경로에서 아래 경로를 지난 웨이퍼를 빼면 차이가 사라지고, 아래 경로는 이 경로의 웨이퍼를 빼도 기준선을 넘습니다</span></div>
       <div class="rel-cross"><span class="step">${esc(stepText(c))}</span> <span class="path inline">${pathHtml(c.parts)}</span>
       <span class="muted">· 웨이퍼 ${fmt.int(c.n)}장 · 겹침 ${fmt.pct(c.overlap, 0)}${hasBad ? ` · bad ${fmt.pct(c.bad)}` : ''} · Certainty ${cert(c.certainty)}</span>
-      <button type="button" class="ghost mini" data-rel="cross" data-key="${esc(c.key)}">상세 열기</button></div>`;
+      ${btn}</div>`;
   }
   box.innerHTML = h;
   box.hidden = false;
@@ -1272,7 +1525,7 @@ function waferGroups(p) {
   const D = p.det;
   const selG = D.sel_group;
   if (p.cMode === 'hi') {
-    return { color: (g) => (g === selG ? C.bad : C.muted), items: [{ g: [selG], c: C.bad, l: '선택 경로 ' + (D.groups[selG]?.label ?? '') }, { rest: true, c: C.muted, l: '나머지 (같은 Order를 지난 다른 경로)' }] };
+    return { color: (g) => (g === selG ? C.bad : C.muted), items: [{ g: [selG], c: C.bad, l: '선택 경로 ' + (D.groups[selG]?.label ?? '') }, { rest: true, c: C.muted, l: '같은 Order를 다른 Unit으로 지난 웨이퍼' }] };
   }
   const order = D.groups.map((x, g) => g).filter((g) => g !== selG).sort((a, b) => D.groups[b].n - D.groups[a].n);
   const top = order.slice(0, PALETTE.length - 1);
@@ -1340,7 +1593,7 @@ function renderPeers(p) {
   if (m === 'bad') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
   const xs = scaleLin(0, nmax, L, R);
   const ys = scaleLin(lo, hi, B, T);
-  const clip = `pclip-${p.id}`;
+  const clip = 'pclip';
   let s = `<defs><clipPath id="${clip}"><rect x="${L}" y="${T}" width="${R - L}" height="${B - T}"/></clipPath></defs><g clip-path="url(#${clip})">`;
   if (bd) {
     s += band(bn, bd.lo, bd.hi, xs, ys, [lo, hi]);
@@ -1376,7 +1629,7 @@ function renderCompare(p) {
   const rest = [];
   w.g.forEach((g, i) => (g === D.sel_group ? mem : rest).push(i));
   const L = 66, R = W - 46;
-  const GR = [[mem, '이 경로', C.bad], [rest, '나머지', C.muted]];
+  const GR = [[mem, '이 경로', C.bad], [rest, '다른 Unit', C.muted]];
   let s = '';
   let y0 = 18;
   if (D.has_bad) {
@@ -1640,20 +1893,26 @@ function watchWidths() {
 function rerender() {
   if (!S.res || S.view !== 'app') return;
   renderFunnel();
-  for (const p of S.panels.values()) if (p.det) renderPanel(p);
+  if (S.panel && S.panel.det) renderPanel(S.panel);
 }
 
 function bindRanking() {
   const tbl = $('#ranking');
   tbl.addEventListener('mouseover', (e) => {
     const tr = e.target.closest('tbody tr[data-i]');
-    const r = tr ? S.res.ranking[+tr.dataset.i].rank : null;
-    if (r !== S.hover) { S.hover = r; drawMarks(); }
+    setHover(tr ? { rank: S.res.ranking[+tr.dataset.i].rank, key: tr.dataset.key || null } : null);
   });
-  tbl.addEventListener('mouseleave', () => { S.hover = null; drawMarks(); });
+  tbl.addEventListener('mouseleave', () => setHover(null));
   tbl.addEventListener('mousedown', (e) => { if (e.shiftKey) e.preventDefault(); });   // Shift+클릭 때 글자가 선택되지 않게
   tbl.addEventListener('click', (e) => {
     if (e.target.closest('.help')) return;              // ⓘ는 설명만 (정렬하지 않음)
+    const grp = e.target.closest('.grp[data-grp]');        // "+n 같은 웨이퍼": 묶인 대상 줄을 펼치거나 접기
+    if (grp) {
+      const i = +grp.dataset.grp;
+      if (S.open.has(i)) S.open.delete(i); else S.open.add(i);
+      renderRanking();
+      return;
+    }
     const th = e.target.closest('th');
     if (th) {
       const k = th.dataset.k;
@@ -1664,11 +1923,12 @@ function bindRanking() {
     const tr = e.target.closest('tbody tr[data-i]');
     if (!tr) return;
     const i = +tr.dataset.i;
+    if (tr.dataset.key) { focusMember(i, tr.dataset.key, e.ctrlKey || e.metaKey); return; }   // 묶인 대상 줄
     if (e.shiftKey && S.focus != null) {                    // Shift: 마지막으로 고른 줄부터 이 줄까지 (지금 정렬 순서로)
       const rows = sortedRows().map((o) => o.i);
       const a = rows.indexOf(S.focus);
       const b = rows.indexOf(i);
-      setPicks(rows.slice(Math.min(a, b), Math.max(a, b) + 1), e.ctrlKey || e.metaKey);
+      setPicks(rows.slice(Math.min(a, b), Math.max(a, b) + 1), e.ctrlKey || e.metaKey, tRank(i));
       return;
     }
     S.focus = i;
@@ -1713,8 +1973,9 @@ function bindFunnel() {
       if (!add && x >= f.L && x <= f.R && y >= f.T && y <= f.B) clearPicks();
       return;
     }
+    if (k.merged && !k.rank && k.key != null) { focusMember(k.merged - 1, k.key, add); return; }   // 묶인 대상의 점 (번호 없음)
     S.focus = r - 1;
-    if (e.shiftKey || e.ctrlKey || e.metaKey) togglePick(r - 1); else setPicks([r - 1]);
+    if (add) togglePick(r - 1); else setPicks([r - 1]);
     revealRow(r - 1);
   });
   bindBrush();
@@ -1798,6 +2059,7 @@ function init() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRuns(); });   // 다시 보면 바로 새로 읽음
   bindFunnel();
   bindRanking();
+  bindStrip();
   bindHome();
   buildScene();
   loadFiles().catch((e) => status('파일 목록을 읽지 못했습니다: ' + esc(e.message), 'error'))

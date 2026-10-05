@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from .engine import MISSING, mean_z, members_of, order_text, share_group
-from .ranking import expected_bad, metric, path_label, same_paths
+from .ranking import expected_bad, metric, path_label, same_order_paths
 from .stats import shrink
 
 GRAY_MAX = 40000             # funnel에 그리는 기준선 안 점의 최대 수 (넘으면 고르게 골라 그림 · 모양은 같음)
@@ -67,6 +67,7 @@ def target_brief(result, c, ref=None):
     out = {'key': c['key'], 'step': c['step'], 'step_name': st['name'], 'desc': st['proc'], 'k': c['k'],
            'items': [[int(q), int(u)] for q, u in c['items']], 'path': path_label(st, c['items']),
            'parts': [path_label(st, [it]) for it in c['items']], 'n': c['n'], 'bad': _bad_of(d, m),
+           'exp_bad': num(expected_bad(c, r), 4) if d['B'] is not None else None,
            'excess': num(metric(c, r), 2), 'certainty': num(c['z'] / c['thr'], 3)}
     if ref is not None:
         mr = members_of(d, ref)
@@ -83,9 +84,9 @@ def target_row(result, rank, c):
     m = members_of(d, c)
     has_b = d['B'] is not None
     notes = []
-    alts = same_paths(d, r, ranked, c['key'])
+    alts = same_order_paths(d, r, c)                    # 웨이퍼가 똑같이 나뉘는 다른 Order로 쓴 경로 (묶인 대상은 순위표 아래 줄로 따로 나온다)
     if alts:
-        notes.append('같은 웨이퍼: ' + ', '.join(alts[:3]) + (f' 외 {len(alts) - 3}개' if len(alts) > 3 else ''))
+        notes.append('같은 웨이퍼 · 다른 Order: ' + ', '.join(alts[:3]) + (f' 외 {len(alts) - 3}개' if len(alts) > 3 else ''))
     if (a := ranked['cross'].get(c['key'])) is not None:
         notes.append(f"다른 STEP 탓 의심: {d['steps'][a['step']]['name']} {path_label(d['steps'][a['step']], a['items'])}")
     merged = sorted((target_brief(result, r['by_key'][k], c) for k, v in ranked['same_as'].items() if v == c['key']),
@@ -159,6 +160,43 @@ def detail_state(result):
                            zk=list(result.zk), spread=result.spread, cfg=result.cfg)
 
 
+def _path_masks(d, step, items):
+    """경로의 웨이퍼(member)와 같은 Order를 모두 지났지만 다른 Unit으로 지난 웨이퍼(rest)"""
+    A = d['assign'][int(step)]
+    items = sorted((int(q), int(u)) for q, u in items)
+    if not items:
+        raise ValueError('Order를 하나 이상 고르세요')
+    qs = [q for q, _ in items]
+    through = np.all(A[qs] != MISSING, axis=0)
+    member = through & np.all([A[q] == u for q, u in items], axis=0)
+    return member, through & ~member
+
+
+def compare_payload(result, targets):
+    """비교 띠: 고른 대상마다 이 경로 · 같은 Order를 다른 Unit으로 지난 웨이퍼의 수와 bad 비율(bad 웨이퍼 수 ÷ 웨이퍼 수,
+    good_bad가 없으면 y_value 평균), 그리고 대상끼리 웨이퍼 겹침(둘을 합친 웨이퍼 중 양쪽 모두에 있는 비율)"""
+    d = result.data
+    has_b = d['B'] is not None
+    bad01 = np.nan_to_num(d['bad']) if has_b else None
+    value = np.asarray(d['value'], dtype=float)
+    rows, mems = [], []
+    for t in targets:
+        member, rest = _path_masks(d, t['step'], t['items'])
+        mems.append(member)
+        rows.append({'n': int(member.sum()), 'rest_n': int(rest.sum()),
+                     'bad': num(bad01[member].mean(), 4) if has_b and member.any() else None,
+                     'rest_bad': num(bad01[rest].mean(), 4) if has_b and rest.any() else None,
+                     'vmean': num(value[member].mean()) if member.any() else None,
+                     'rest_vmean': num(value[rest].mean()) if rest.any() else None})
+    k = len(mems)
+    overlap = [[None] * k for _ in range(k)]
+    for i in range(k):
+        for j in range(i + 1, k):
+            u = int((mems[i] | mems[j]).sum())
+            overlap[i][j] = overlap[j][i] = num((mems[i] & mems[j]).sum() / u, 3) if u else 0.0
+    return {'targets': rows, 'overlap': overlap, 'has_bad': has_b}
+
+
 def detail_payload(result, step, items):
     """선택한 STEP · 경로(Order와 Unit 묶음)의 상세. items = [(Order 번호 q, Unit 번호 u), ...]"""
     d, r, zk, s = result.data, result.res, result.zk, result.spread
@@ -181,9 +219,8 @@ def detail_payload(result, step, items):
                        'units': [{'u': u, 'name': name, 'n': int(cnt[u]), 'bad': num(bsum[u] / cnt[u], 4) if cnt[u] and has_b else None,
                                   'vmean': num(vsum[u] / cnt[u]) if cnt[u] else None} for u, name in enumerate(sq['units'])]})
     qs = [q for q, _ in items]
-    through = np.all(A[qs] != MISSING, axis=0)              # 고른 Order를 모두 지난 웨이퍼
-    member = through & np.all([A[q] == u for q, u in items], axis=0)
-    rest = through & ~member
+    member, rest = _path_masks(d, step, items)
+    through = member | rest                                 # 고른 Order를 모두 지난 웨이퍼
     k = len(items)
     thr = zk[min(k, len(zk) - 1)] * s if len(zk) > 1 else math.nan
     if k >= len(zk) and share_group(k) != share_group(len(zk) - 1):

@@ -95,13 +95,3 @@ def rank_targets(data, res, zk, same_wafers=0.9):
         else:
             same_as[c['key']] = hit
     return {'top': [res['by_key'][k] for k, _ in kept], 'same_as': same_as, 'by_target': by_target, 'cross': cross, 'over': over_pts}
-
-
-def same_paths(data, res, ranked, key):
-    """웨이퍼가 같은 다른 경로: 같은 Order로 바꿔 쓴 경로와 한 줄로 묶인 대상(같은 스텝이면 경로만, 다른 스텝이면 스텝과 경로)"""
-    c = res['by_key'][key]
-    out = same_order_paths(data, res, c)
-    steps = data['steps']
-    out += [path_label(steps[b['step']], b['items']) if b['step'] == c['step'] else f"{steps[b['step']]['name']} {path_label(steps[b['step']], b['items'])}"
-            for b in (res['by_key'][k] for k, v in ranked['same_as'].items() if v == key)]
-    return out

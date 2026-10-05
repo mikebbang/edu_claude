@@ -211,6 +211,18 @@ table.rk td { white-space: nowrap; }
 table.rk td.pathcell { white-space: normal; width: 100%; max-width: 0; }
 table.rk .step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.rk .note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* 여러 개 골랐을 때 아래 상세에 보이는 줄 · 묶인 대상 줄("+n 같은 웨이퍼"로 펼침) */
+table.rank tbody tr.cur td { background: color-mix(in srgb, var(--ring) 16%, var(--card)); }
+table.rank tbody tr.cur td:first-child { box-shadow: inset 4px 0 0 var(--ring); font-weight: 700; }
+table.rank tbody tr.sub td { background: color-mix(in srgb, var(--band) 55%, var(--card)); font-size: 11.5px; padding-top: 4px; padding-bottom: 4px; }
+table.rank tbody tr.sub:hover td { background: var(--hover); }
+table.rank tbody tr.sub.cur td { background: color-mix(in srgb, var(--ring) 16%, var(--card)); color: var(--accent); }
+table.rank tbody tr.sub td.pathcell { padding-left: 16px; }
+table.rank .sub-mark { color: var(--muted); }
+table.rk tr.sub .tag { margin: 0 6px 0 0; color: var(--accent); background: var(--accent-bg); }
+.grp-line { margin-top: 3px; }
+button.grp { height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-bg); border: 1px solid var(--accent-line); }
+button.grp:hover, button.grp[aria-expanded=true] { background: var(--card); }
 .path { display: flex; flex-wrap: wrap; column-gap: 5px; font-weight: 500; }
 .path.inline { display: inline-flex; }
 .path .ps { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -232,16 +244,54 @@ table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
 @keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .live { animation: none; } }
 
-/* 상세: 고른 대상마다 카드 하나, 안은 크기를 고정한 2 × 2 */
+/* 비교 띠: 고른 대상마다 한 줄 · 모든 줄이 같은 눈금 (회색 점 = 다른 Unit, 빨간 점 = 이 경로) */
+.cmp .card-head { flex-wrap: wrap; row-gap: 4px; }
+.cmp-legend { margin-top: 0; }
+.cmp-body { overflow-x: auto; }
+.cmp-row { display: grid; grid-template-columns: minmax(170px, 1.2fr) minmax(220px, 2fr) 178px 172px; align-items: center; gap: 12px; min-width: 760px;
+  padding: 5px 8px; border-radius: 8px; cursor: pointer; outline: none; }
+.cmp-row:hover { background: var(--hover); }
+.cmp-row:focus-visible { box-shadow: inset 0 0 0 2px var(--ring); }
+.cmp-row.cur { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--ring); }
+.cmp-row.cur:focus-visible { box-shadow: inset 3px 0 0 var(--ring), inset 0 0 0 2px var(--ring); }
+.cmp-row.sub .cmp-name { padding-left: 20px; }
+.cmp-axis { cursor: default; padding-top: 0; padding-bottom: 3px; margin-bottom: 3px; border-bottom: 1px solid var(--line); border-radius: 0; }
+.cmp-axis:hover { background: none; }
+.cmp-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.cmp-name .no { flex: none; min-width: 30px; font-weight: 700; }
+.cmp-name .step { flex: none; color: var(--ink2); }
+.cmp-name .tag { flex: none; margin: 0; color: var(--accent); background: var(--accent-bg); }
+.cmp-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.cmp-row.cur .cmp-name, .cmp-row.cur .cmp-name .step { color: var(--accent); }
+.cmp-track { position: relative; height: 22px; margin: 0 10px; }
+.cmp-axis .cmp-track { height: 16px; }
+.cmp-gl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.cmp-tk { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; line-height: 16px; color: var(--ink2); white-space: nowrap; }
+.cmp-link { position: absolute; top: 50%; height: 2px; margin-top: -1px; background: var(--line2); }
+.cmp-dot { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; box-shadow: 0 0 0 2px var(--card); }
+.cmp-row:hover .cmp-dot { box-shadow: 0 0 0 2px var(--hover); }
+.cmp-row.cur .cmp-dot { box-shadow: 0 0 0 2px var(--accent-bg); }
+.cmp-dot.rest { background: var(--muted); }
+.cmp-dot.this { background: var(--bad); }
+.cmp-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ovb { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--hover); color: var(--ink2); font-size: 11.5px; white-space: nowrap; }
+.ovb.hi { background: var(--accent-bg); color: var(--accent); }
+.cmp-more { padding: 6px 8px 0; }
+
+/* 상세: 지금 보는 대상 하나, 안은 크기를 고정한 2 × 2 */
 #details { display: flex; flex-direction: column; gap: 12px; }
-.details-note { padding: 0 4px; }
 .panel { transition: opacity .15s; }
 .panel.loading { opacity: .55; }
 .panel.rel { border-style: dashed; border-color: var(--ring); }
 .detail-head { display: flex; align-items: center; gap: 6px; }
 .dh { flex: 1; min-width: 0; }
 .dh .t { font-size: 15px; font-weight: 600; }
-.dstat { margin: 4px 0 8px 40px; color: var(--ink2); }
+.dnav { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.dcount { min-width: 70px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gsw-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0 2px; }
+.gsw { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; }
+.gsw button { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dstat { margin: 6px 0 8px; color: var(--ink2); }
 .dstat b { color: var(--ink); font-weight: 600; }
 .badtxt { color: var(--bad); font-weight: 600; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--hover); color: var(--warn); font-size: 12px; margin-left: 6px; }
@@ -257,6 +307,7 @@ table.rel th { position: static; background: transparent; cursor: default; }
 table.rel tr { cursor: default; }
 table.rel tbody tr:hover { background: transparent; }
 table.rel tr.rep td { font-weight: 500; }
+table.rel tbody tr.cur, table.rel tbody tr.cur:hover { background: var(--accent-bg); }
 table.rel td.diff { white-space: normal; min-width: 190px; }
 table.rel .tag { margin-left: 0; color: var(--accent); background: var(--accent-bg); }
 .rel-why { margin-top: 6px; }

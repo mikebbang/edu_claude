@@ -345,6 +345,25 @@ def run_detail(rid: str, req: DetailRequest):
         raise HTTPException(400, str(e))
 
 
+class CompareRequest(BaseModel):
+    targets: list[DetailRequest]
+
+
+@app.post('/api/runs/{rid}/compare')
+def run_compare(rid: str, req: CompareRequest):
+    """비교 띠: 고른 대상들의 이 경로 · 다른 Unit 웨이퍼의 bad 비율과 대상끼리 웨이퍼 겹침 (저장된 결과로 계산)"""
+    with lock:
+        done = _run(rid)['status'] == 'done'
+    if not done:
+        raise HTTPException(409, '아직 끝나지 않았습니다.')
+    if not 1 <= len(req.targets) <= 200:
+        raise HTTPException(400, '비교할 대상은 1~200개입니다.')
+    try:
+        return views.compare_payload(_state(rid), [t.model_dump() for t in req.targets])
+    except (ValueError, IndexError) as e:
+        raise HTTPException(400, str(e))
+
+
 @app.delete('/api/runs/{rid}')
 def delete_run(rid: str):
     """실행 기록을 지운다. 돌고 있으면 계산을 멈추고 지운다"""

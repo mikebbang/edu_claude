@@ -154,9 +154,15 @@
     </div>
   </section>
 
-  <section id="details" hidden aria-live="polite">
-    <div class="details-note muted small" id="details-note" hidden></div>
+  <!-- 비교 띠: 순위를 여러 개 고르면 대상마다 한 줄 (회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼, 빨간 점 = 이 경로) -->
+  <section class="card cmp" id="cmp" hidden aria-label="고른 대상 비교">
+    <div class="card-head"><h2>고른 대상 비교</h2><span class="help" data-help="cmp"><svg class="ico-info" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.6v.1"/></svg></span>
+      <span class="muted small" id="cmp-sub"></span><span class="grow"></span>
+      <span class="legend cmp-legend"><span class="item"><span class="dot" style="background:var(--bad)"></span>이 경로</span><span class="item"><span class="dot" style="background:var(--muted)"></span>같은 Order를 다른 Unit으로 지난 웨이퍼</span></span></div>
+    <div class="cmp-body" id="cmp-body"></div>
   </section>
+
+  <section id="details" hidden aria-live="polite"></section>
 </main>
 
 <!-- 실행 기록: 위쪽 시계 아이콘으로 여는 오른쪽 서랍 -->
@@ -173,15 +179,19 @@
 </aside>
 </div>
 
-<!-- 상세 카드 하나 (고른 대상마다 복제) -->
+<!-- 상세 카드 (지금 보는 대상 하나) -->
 <template id="panel-tpl">
   <article class="card panel">
     <div class="detail-head">
-      <button type="button" class="ghost icon-only" data-a="prev" aria-label="이전 순위" title="이전 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
       <div class="dh" data-r="dh"></div>
-      <button type="button" class="ghost icon-only" data-a="next" aria-label="다음 순위" title="다음 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-      <button type="button" class="ghost close icon-only" data-a="close" aria-label="이 상세 닫기" title="닫기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <div class="dnav">
+        <button type="button" class="ghost icon-only" data-a="prev" aria-label="이전 순위" title="이전 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <span class="dcount muted small" data-r="count"></span>
+        <button type="button" class="ghost icon-only" data-a="next" aria-label="다음 순위" title="다음 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+      <button type="button" class="ghost close icon-only" data-a="close" aria-label="이 순위를 고른 것에서 빼기" title="이 순위를 고른 것에서 빼기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
+    <div class="gsw-row" data-r="group" hidden></div>
     <div class="dstat" data-r="dstat">불러오는 중…</div>
     <div class="row sel-row">
       <span class="chips" data-r="chips"></span>
@@ -196,7 +206,7 @@
       <div class="sub cell">
         <div class="sub-head"><h3>웨이퍼 산점도</h3><span class="grow"></span>
           <label class="size-ctl muted small">점 크기 <input type="range" min="1" max="8" step="0.5" data-a="size" aria-label="산점도 점 크기"></label>
-          <button type="button" class="ghost mini" data-a="wcsv" title="이 경로와 나머지 웨이퍼 목록(lot · wafer_id · 시각 · y_value · good_bad)을 CSV로"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg>CSV</button>
+          <button type="button" class="ghost mini" data-a="wcsv" title="이 경로와 같은 Order를 다른 Unit으로 지난 웨이퍼 목록(lot · wafer_id · 시각 · y_value · good_bad)을 CSV로"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg>CSV</button>
           <span class="seg small" data-r="cseg" role="group" aria-label="산점도 색"><button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">조합별 색</button></span>
         </div>
         <div class="legend" data-r="slegend"></div>
@@ -209,8 +219,8 @@
         <svg class="chart-svg" data-r="peers" role="img" aria-label="같은 Order 다른 경로 비교"></svg>
       </div>
       <div class="sub cell">
-        <div class="sub-head"><h3>이 경로 vs 나머지</h3></div>
-        <svg class="chart-svg" data-r="compare" role="img" aria-label="이 경로와 나머지 비교"></svg>
+        <div class="sub-head"><h3>이 경로 vs 다른 Unit</h3><span class="grow"></span><span class="muted small">같은 Order를 다른 Unit으로 지난 웨이퍼와 비교</span></div>
+        <svg class="chart-svg" data-r="compare" role="img" aria-label="이 경로와 같은 Order를 다른 Unit으로 지난 웨이퍼 비교"></svg>
       </div>
     </div>
   </article>
