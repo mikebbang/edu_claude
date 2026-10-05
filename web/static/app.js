@@ -9,6 +9,7 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const CMP_MAX = 200;                 // 비교 띠에 그리는 최대 대상 수
+const RECENT_MAX = 10;               // 연 결과가 없을 때 보여 주는 최근 실행 수
 const S = {
   view: null, fileId: null, runId: null, res: null, hover: null, yMode: 'judg', sort: { key: 'rank', dir: 1 }, fn: null,
   brush: null, brushed: false, hintTimer: null,
@@ -458,14 +459,10 @@ function closeDrawer() {
 }
 
 // 연 결과가 없을 때: 최근 실행 6개를 바로 열 수 있게
+// 연 결과가 없을 때: 최근 실행을 최신순 표로 (줄을 누르면 저장된 결과를 연다)
 function renderRecent(all) {
-  $('#recent-list').innerHTML = all.slice(0, 6).map((v) => {
-    const jobs = v.job_ids || [];
-    return `<div class="rl-row" role="button" tabindex="0" data-id="${esc(v.id)}">
-      <div class="rl-job"><b>${jobs.length ? esc(jobs[0]) : '–'}</b><span class="muted"> · ${esc((v.analysis_dates || [])[0] || '')}</span></div>
-      <div class="rl-res">${homeResult(v)}</div>
-      <div class="rl-meta">${esc(v.file_name || v.file_id)} · ${when(v.created)} 실행 · ${esc(settingsText(v.settings).main)}</div></div>`;
-  }).join('');
+  const rows = all.slice().sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, RECENT_MAX);
+  $('#recent-list').innerHTML = rows.length ? runTable(rows, false) : '';
   syncEmpty();
 }
 
@@ -565,25 +562,28 @@ function renderHistory() {
     $('#history').innerHTML = `<div class="empty muted">${all.length ? '찾는 기록이 없습니다.' : '아직 실행 기록이 없습니다. Job ID를 넣거나 raw.csv를 올리고 Run을 누르면 여기에 남습니다.'}</div>`;
     return;
   }
-  const body = rows.map((v) => {
-    const st = settingsText(v.settings);
-    const jobs = v.job_ids || [];
-    const dates = v.analysis_dates || [];
-    const many = (a) => (a.length ? esc(a[0]) + (a.length > 1 ? ` <span class="muted">외 ${a.length - 1}개</span>` : '') : '<span class="muted">–</span>');
-    const busy = ACTIVE.has(v.status);
-    return `<tr data-id="${esc(v.id)}"${v.id === S.runId ? ' class="on"' : ''}>
+  $('#history').innerHTML = runTable(rows, true);
+}
+
+// 실행 기록 표: History 서랍과 최근 실행에서 같이 쓴다. del = 삭제 칸 (최근 실행에는 없음)
+function runRow(v, del) {
+  const st = settingsText(v.settings);
+  const jobs = v.job_ids || [];
+  const dates = v.analysis_dates || [];
+  const many = (a) => (a.length ? esc(a[0]) + (a.length > 1 ? ` <span class="muted">외 ${a.length - 1}개</span>` : '') : '<span class="muted">–</span>');
+  const busy = ACTIVE.has(v.status);
+  return `<tr data-id="${esc(v.id)}"${v.id === S.runId ? ' class="on"' : ''}${del ? '' : ' tabindex="0"'}>
       <td class="l nowrap" title="${when(v.created, true)}">${when(v.created)}</td>
       <td class="l jid" title="${esc(jobs.join(', '))}">${many(jobs)}</td>
       <td class="l nowrap" title="${esc(dates.join(', '))}">${many(dates)}</td>
       <td class="l"><div class="fname">${esc(v.file_name || v.file_id)}</div>${v.job_source ? `<div class="note">${v.file_exists ? 'DB에서 가져옴' : v.status === 'error' ? 'DB에서 가져오지 못함' : 'DB에서 가져오는 중'} (job_id ${esc(v.job_source)})</div>` : v.file_exists ? '' : '<div class="note">올린 파일이 지워져 다시 계산은 못 함</div>'}</td>
       <td class="l"><span class="nowrap">${esc(st.main)}</span>${st.extra ? `<div class="note">${esc(st.extra)}</div>` : ''}</td>
       <td class="l">${resultCell(v)}</td>
-      <td><button type="button" class="ghost del" data-del="${esc(v.id)}" title="${busy ? '계산을 멈추고 기록 삭제' : '기록 삭제'}">삭제</button></td>
+      ${del ? `<td><button type="button" class="ghost del" data-del="${esc(v.id)}" title="${busy ? '계산을 멈추고 기록 삭제' : '기록 삭제'}">삭제</button></td>` : ''}
     </tr>`;
-  }).join('');
-  $('#history').innerHTML = `<table class="rank hist"><thead><tr><th class="l">Run time</th><th class="l">job_id</th><th class="l">analysis_date</th>
-    <th class="l">File</th><th class="l">Settings</th><th class="l">Result</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
 }
+const runTable = (rows, del) => `<table class="rank hist"><thead><tr><th class="l">Run time</th><th class="l">job_id</th><th class="l">analysis_date</th>
+    <th class="l">File</th><th class="l">Settings</th><th class="l">Result</th>${del ? '<th></th>' : ''}</tr></thead><tbody>${rows.map((v) => runRow(v, del)).join('')}</tbody></table>`;
 
 function removeRun(id) {
   const v = S.runs.find((x) => x.id === id);
@@ -2221,7 +2221,7 @@ function init() {
     closeDrawer();
     if (tr.dataset.id !== S.runId || !S.res) openRun(tr.dataset.id);
   });
-  const openRecent = (e) => { const r = e.target.closest('.rl-row'); if (r) openRun(r.dataset.id); };
+  const openRecent = (e) => { const r = e.target.closest('tr[data-id]'); if (r) openRun(r.dataset.id); };
   $('#recent-list').addEventListener('click', openRecent);
   $('#recent-list').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRecent(e); } });
   $('#setup-open').addEventListener('click', () => { setSetup(true); if (!S.fileId) $('#job_id').focus(); });

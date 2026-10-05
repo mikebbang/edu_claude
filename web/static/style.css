@@ -112,12 +112,8 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .mini-set { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setup-close { float: right; height: 28px; margin: -2px -4px 0 8px; font-size: 12px; }
 /* 연 결과가 없을 때 최근 실행 */
-.recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
-.rl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; transition: border-color .15s, background-color .15s; }
-.rl-row:hover, .rl-row:focus-visible { border-color: var(--accent-line); background: var(--accent-bg); outline: none; }
-.rl-job { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rl-res { font-size: 12px; text-align: right; white-space: nowrap; }
-.rl-meta { grid-column: 1 / -1; font-size: 12px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-list { max-height: none; }
+.recent-list tbody tr:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 /* 결론 한 줄 */
 .concl { display: flex; align-items: flex-start; gap: 12px; border-left: 4px solid var(--ring); }
 .concl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -180,6 +176,8 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .warn { color: var(--warn); }
 .grid-main { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 12px; }
 .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.card-head h2 { flex: none; white-space: nowrap; }          /* 제목(점 + 이름)은 한 줄로, 좁으면 옆 설명이 줄을 바꾼다 */
+.card-head > .muted { min-width: 0; word-break: keep-all; }
 .card-head h2::before, .drawer-head h2::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--ring); vertical-align: middle; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex: none; background: var(--card); }
 .seg button { border: 0; border-radius: 0; height: 30px; padding: 0 12px; background: none; color: var(--ink2); }
