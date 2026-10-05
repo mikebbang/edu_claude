@@ -123,6 +123,7 @@ const AXIS_TIP = {
   judg: ['종합 (Value+bad)', '판정에 실제로 쓰는 점수입니다. 경로의 Value 차이와 bad 차이를 합치고 Order 수에 따른 기준 차이까지 맞춘 뒤 높이로 그립니다. 선 밖이면 판정에서도 밖입니다. 높이는 기준선 대비 위치라 눈금 숫자는 적지 않습니다.'],
   mean: ['y_value 평균', '경로 웨이퍼의 y_value 평균을 그대로 그립니다. 선은 Value만 봤을 때의 기준선이라, bad 때문에 판정된 경로는 선 안에 보일 수 있습니다.'],
   bad: ['bad 비율', '경로 웨이퍼 중 bad 비율을 그대로 그립니다. 선은 bad만 봤을 때의 기준선이라, Value 때문에 판정된 경로는 선 안에 보일 수 있습니다.'],
+  ex: ['초과 bad (순위 기준)', '예상보다 bad가 몇 장 더 나왔는지, 즉 이 경로를 고치면 줄어드는 bad 장수입니다. 순위를 정하는 기준이라 높이를 그대로 읽으면 됩니다. 장 수라서 웨이퍼가 많을수록 선이 벌어집니다. good_bad가 없으면 웨이퍼 수 × y_value 차이(N × ΔValue)입니다.'],
 };
 function axisTipSvg(k) {
   const L = 22, R = 224, T = 6, B = 66;
@@ -130,13 +131,14 @@ function axisTipSvg(k) {
   let up = '', dn = '';
   for (let i = 0; i <= 20; i++) {
     const x = L + (i / 20) * (R - L);
-    const hw = 26 / Math.sqrt(1 + i * 0.5);
+    const hw = k === 'ex' ? 4 + 22 * Math.sqrt(i / 20) : 26 / Math.sqrt(1 + i * 0.5);   // 초과 bad는 장 수라 웨이퍼가 많을수록 벌어짐
     up += `${x},${36 - hw} `;
     dn += `${x},${36 + hw} `;
   }
   s += `<polyline points="${up}" fill="none" stroke="${C.ink2}"/><polyline points="${dn}" fill="none" stroke="${C.ink2}"/>`;
   for (const [x, y] of [[50, 40], [70, 30], [90, 44], [110, 34], [140, 38], [160, 33], [190, 39], [205, 35]]) s += `<circle cx="${x}" cy="${y}" r="2" fill="${C.muted}"/>`;
-  const ry = k === 'mean' ? 31 : 13;
-  s += `<circle cx="120" cy="${ry}" r="4" fill="${C.bad}"/><text x="128" y="${ry + 4}" fill="${C.bad}" font-size="11">${k === 'mean' ? 'bad로 판정된 경로 → 선 안' : '판정된 경로 → 선 밖'}</text>`;
+  const [rx, ry] = k === 'ex' ? [196, 8] : [120, k === 'mean' ? 31 : 13];
+  const rt = k === 'ex' ? '순위 1위 → 맨 위' : k === 'mean' ? 'bad로 판정된 경로 → 선 안' : '판정된 경로 → 선 밖';
+  s += `<circle cx="${rx}" cy="${ry}" r="4" fill="${C.bad}"/><text x="${k === 'ex' ? rx - 8 : rx + 8}" y="${ry + 4}" text-anchor="${k === 'ex' ? 'end' : 'start'}" fill="${C.bad}" font-size="11">${rt}</text>`;
   return s + `<text x="${(L + R) / 2}" y="${B + 14}" text-anchor="middle" fill="${C.ink2}" font-size="11">웨이퍼 수 N</text>`;
 }

@@ -10,6 +10,7 @@ from .stats import shrink
 
 GRAY_MAX = 40000             # funnel에 그리는 기준선 안 점의 최대 수 (넘으면 고르게 골라 그림 · 모양은 같음)
 PEER_MAX = 600               # 같은 Order 다른 경로 비교에 그리는 경로의 최대 수 (웨이퍼가 많은 순)
+STEP_MAX = 12000             # 경로 비교(STEP 전체)에 그리는 조합의 최대 수 (넘으면 기준선 안 조합을 고르게 골라 그림 · 순위는 모두로 셈)
 
 
 def num(x, d=6):
@@ -51,8 +52,85 @@ def _bounds(sc, thr, grid):
                     'mid': num(sc['vmu'])}}
     if sc['p0'] is not None:
         hw = thr * sc['bsd'] / np.sqrt(grid) * sh
-        out['bad'] = {'lo': nums(np.clip(sc['p0'] - hw, 0, 1)), 'hi': nums(np.clip(sc['p0'] + hw, 0, 1)), 'mid': num(sc['p0'])}
+        lo, hi = np.clip(sc['p0'] - hw, 0, 1), np.clip(sc['p0'] + hw, 0, 1)
+        out['bad'] = {'lo': nums(lo), 'hi': nums(hi), 'mid': num(sc['p0'])}
+        out['ex'] = {'lo': nums(grid * (lo - sc['p0']), 3), 'hi': nums(grid * (hi - sc['p0']), 3), 'mid': 0.0}   # 초과 bad = 장 수
+    else:                                                   # good_bad가 없으면 순위 기준 N × ΔValue (판정용 Value 눈금)
+        h = grid * _half(sc, thr, grid)
+        out['ex'] = {'lo': nums(-h, 3), 'hi': nums(h, 3), 'mid': 0.0}
     return out
+
+
+def _excess(d, r, m):
+    """웨이퍼 묶음의 순위 기준값: 초과 bad = bad 장수 − 기대 bad 장수 (good_bad가 없으면 웨이퍼 수 × (판정용 Value 평균 − 전체 평균))"""
+    if not m.any():
+        return None
+    if d['B'] is not None:
+        bad01 = np.nan_to_num(d['bad'])
+        exp = d['bad_exp'] if d.get('bad_exp') is not None else np.full(d['N'], bad01.mean())
+        return float(bad01[m].sum() - exp[m].sum())
+    return float(m.sum() * (np.asarray(d['Y'], dtype=float)[m].mean() - r['mu']))
+
+
+def _step_table(result):
+    """경로 비교(STEP 전체)용: 계산한 모든 조합을 STEP 순서로 모은 표 (웨이퍼 수 · Certainty · 초과 bad · y_value 평균 · bad 비율 · 판정 · 경로).
+    실행 기록(state)에는 실행할 때 만든 것을 저장해 두고, 전체 결과에서는 처음 쓸 때 만든다. 예전 코드로 저장한 기록에는 없다(None)"""
+    t = getattr(result, 'step_table', None)
+    if t is not None or not hasattr(result, 'ranked'):
+        return t
+    d, r = result.data, result.res
+    combos = sorted(r['combos'], key=lambda c: c['step'])
+    k = np.array([c['k'] for c in combos], dtype=np.int64)
+    t = {'start': np.searchsorted(np.array([c['step'] for c in combos], dtype=np.int64), np.arange(len(d['steps']) + 1)),  # STEP s = start[s]:start[s+1]
+         'n': np.array([c['n'] for c in combos], dtype=np.int32),
+         'cert': np.array([c['z'] / c['thr'] for c in combos], dtype=np.float32),
+         'ex': np.array([metric(c, r) for c in combos], dtype=np.float32),
+         'vmean': np.array([c['vmean'] for c in combos], dtype=np.float32),
+         'bad': np.array([c['bad_rate'] for c in combos], dtype=np.float32) if d['B'] is not None else None,
+         'flag': np.array([1 if c['over'] else 2 if c['z'] < -c['thr'] else 0 for c in combos], dtype=np.int8),   # 1 기준선 밖 · 2 좋은 쪽
+         'ioff': np.r_[0, np.cumsum(2 * k)],                                               # 경로 = items[ioff[i]:ioff[i+1]] (Order, Unit 번갈아)
+         'items': np.array([v for c in combos for it in c['items'] for v in it], dtype=np.int16)}
+    result.step_table = t
+    return t
+
+
+def _step_match(t, step, items):
+    """STEP 표에서 경로(items)와 같은 조합의 번호 (없으면 None: 계산하지 않은 경로 · 같은 Order로 합쳐진 Order를 쓴 경로)"""
+    want = np.array([v for it in sorted(items) for v in it], dtype=np.int16)
+    ioff, flat = t['ioff'], t['items']
+    for i in range(int(t['start'][step]), int(t['start'][step + 1])):
+        if ioff[i + 1] - ioff[i] == len(want) and np.array_equal(flat[ioff[i]:ioff[i + 1]], want):
+            return i
+    return None
+
+
+def step_payload(result, step):
+    """경로 비교(STEP 전체): 그 STEP에서 계산한 모든 조합. 종합은 큰 funnel과 같은 눈금(Certainty × Order 1개 기준 띠)"""
+    t = _step_table(result)
+    if t is None:
+        return None
+    step = int(step)
+    if not 0 <= step < len(result.data['steps']):
+        raise IndexError('STEP 번호를 확인하세요')
+    idx = np.arange(int(t['start'][step]), int(t['start'][step + 1]))
+    total = len(idx)
+    if total > STEP_MAX:                                   # 기준선 밖 · 좋은 쪽은 모두, 기준선 안은 고르게 골라서
+        out_ = idx[t['flag'][idx] != 0]
+        in_ = idx[t['flag'][idx] == 0]
+        take = max(0, STEP_MAX - len(out_))
+        if take < len(in_):
+            in_ = np.random.default_rng(0).choice(in_, take, replace=False)
+        idx = np.sort(np.r_[out_, in_])
+    sc = _scales(result)
+    zk, s = result.zk, result.spread
+    n = t['n'][idx].astype(float)
+    nmax = float(n.max()) if len(n) else 10.0
+    return {'step': step, 'total': total, 'shown': len(idx), 'n': [int(v) for v in t['n'][idx]],
+            'judg': nums(sc['mu'] + t['cert'][idx].astype(float) * _half(sc, zk[1] * s, n), 5),
+            'mean': nums(t['vmean'][idx], 5), 'bad': nums(t['bad'][idx], 5) if t['bad'] is not None else None,
+            'ex': nums(t['ex'][idx], 2), 'cert': nums(t['cert'][idx], 3), 'flag': [int(v) for v in t['flag'][idx]],
+            'items': [t['items'][t['ioff'][i]:t['ioff'][i + 1]].tolist() for i in idx],
+            'bounds': _bounds(sc, zk[1] * s, _grid(max(2, result.cfg.min_n), nmax * 1.15))}
 
 
 def _bad_of(d, m):
@@ -157,7 +235,7 @@ def detail_state(result):
     d, r = result.data, result.res
     keep = ('N', 'Y', 'B', 'bad', 'value', 'steps', 'assign', 'tk', 't_base', 'part_idx', 'part_sig', 'bad_exp', 'lots', 'wafer_ids')
     return SimpleNamespace(data={k: d[k] for k in keep if k in d}, res={k: r[k] for k in ('mu', 'sd', 'N', 'r', 'p0', 'signals')},
-                           zk=list(result.zk), spread=result.spread, cfg=result.cfg)
+                           zk=list(result.zk), spread=result.spread, cfg=result.cfg, step_table=_step_table(result))
 
 
 def _path_masks(d, step, items):
@@ -226,11 +304,21 @@ def detail_payload(result, step, items):
     if k >= len(zk) and share_group(k) != share_group(len(zk) - 1):
         thr = math.nan                                      # 계산한 Order 수보다 많이 고르면 그 묶음의 기준이 없을 수 있다
     z = mean_z(d, r, member) if member.sum() >= 2 else math.nan
+    sc = _scales(result)
     sel = {'items': [[q, u] for q, u in items], 'label': path_label(st, items), 'n': int(member.sum()),
            'bad': num(bad01[member].mean(), 4) if has_b and member.any() else None,
            'rest_n': int(rest.sum()), 'rest_bad': num(bad01[rest].mean(), 4) if has_b and rest.any() else None,
            'vmean': num(value[member].mean()) if member.any() else None, 'certainty': num(z / thr, 3) if math.isfinite(thr) else None,
-           'k': k, 'group': order_text(k)}
+           'k': k, 'group': order_text(k), 'ex': num(_excess(d, r, member), 2) if member.any() else None,
+           'judg': num(sc['mu'] + z / thr * float(_half(sc, zk[1] * s, max(1, int(member.sum())))), 5) if math.isfinite(thr) and member.any() else None,
+           'step_rank': None}
+    t = _step_table(result)
+    if t is not None:                                      # 이 STEP의 모든 조합 중 몇 번째인가 (Certainty · 초과 bad)
+        a, b_ = int(t['start'][step]), int(t['start'][step + 1])
+        j = _step_match(t, step, items)
+        c_, e_ = (t['cert'][j], t['ex'][j]) if j is not None else (sel['certainty'], sel['ex'])
+        sel['step_rank'] = {'total': b_ - a, 'cert': 1 + int((t['cert'][a:b_] > c_).sum()) if c_ is not None else None,
+                            'ex': 1 + int((t['ex'][a:b_] > e_).sum()) if e_ is not None else None}
     # 고른 Order들의 Unit 조합(경로)마다: 웨이퍼 산점도 범례 · 같은 Order 다른 경로 비교
     U = np.stack([A[q][through] for q in qs], axis=1).astype(np.int64)
     combos_, inv, cnt = np.unique(U, axis=0, return_inverse=True, return_counts=True)
@@ -238,7 +326,6 @@ def detail_payload(result, step, items):
     sel_row = np.array([u for _, u in items])
     sel_g = int(np.flatnonzero((combos_ == sel_row).all(axis=1))[0]) if member.any() else -1
     wid = np.flatnonzero(through)
-    sc = _scales(result)
     groups = []
     for g, row in enumerate(combos_.tolist()):
         gi = wid[inv == g]
@@ -253,7 +340,7 @@ def detail_payload(result, step, items):
         m = np.zeros(d['N'], dtype=bool)
         m[wid[inv == g]] = True
         zg = mean_z(d, r, m) if m.sum() >= 2 else math.nan
-        peers.append({'g': int(g), 'n': int(cnt[g]), 'mean': groups[g]['vmean'], 'bad': groups[g]['bad'],
+        peers.append({'g': int(g), 'n': int(cnt[g]), 'mean': groups[g]['vmean'], 'bad': groups[g]['bad'], 'ex': num(_excess(d, r, m), 2),
                       'judg': num(sc['mu'] + zg / thr * float(_half(sc, zk[1] * s, cnt[g]))) if math.isfinite(thr) else None,
                       'certainty': num(zg / thr, 3) if math.isfinite(thr) else None})
     q_last = max(qs)                                        # 시간축: 고른 Order 중 마지막 Order의 track-in 시각

@@ -345,6 +345,22 @@ def run_detail(rid: str, req: DetailRequest):
         raise HTTPException(400, str(e))
 
 
+@app.get('/api/runs/{rid}/step/{step}')
+def run_step(rid: str, step: int):
+    """경로 비교(STEP 전체): 그 STEP에서 계산한 모든 조합의 점"""
+    with lock:
+        done = _run(rid)['status'] == 'done'
+    if not done:
+        raise HTTPException(409, '아직 끝나지 않았습니다.')
+    try:
+        out = views.step_payload(_state(rid), step)
+    except (ValueError, IndexError) as e:
+        raise HTTPException(400, str(e))
+    if out is None:
+        raise HTTPException(409, '이 실행은 STEP 전체 조합을 저장하지 않은 예전 기록입니다. Run을 다시 누르면 볼 수 있습니다 (같은 Order 보기는 됩니다).')
+    return out
+
+
 class CompareRequest(BaseModel):
     targets: list[DetailRequest]
 

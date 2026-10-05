@@ -14,6 +14,7 @@ const S = {
   brush: null, brushed: false, hintTimer: null,
   picks: [], focus: null, ptSize: 4.5, files: [],
   cur: null, open: new Set(), panel: null, cmp: null, cmpSeq: 0, cmpPending: null,   // 상세에 보이는 대상 · 묶인 대상을 펼친 순위 · 상세 카드 · 비교 띠 값
+  stepCache: new Map(),                               // 경로 비교(STEP 전체)용 조합 · STEP마다 한 번 받음
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
   db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 raw.csv로만)
   fView: 'all', pendingDel: new Set(), toasts: [], conclText: '',   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
@@ -1235,6 +1236,7 @@ function resetDetail() {
   S.cmp = null;
   S.cmpPending = null;
   S.cmpSeq++;
+  S.stepCache = new Map();
   $('#cmp').hidden = true;
 }
 
@@ -1259,7 +1261,7 @@ function showPanel() {
 
 function makePanel() {
   const el = $('#panel-tpl').content.firstElementChild.cloneNode(true);
-  const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pMode: 'judg', seq: 0 };
+  const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pMode: 'judg', pScope: 'step', xMode: 'all', seq: 0 };   // 보기 선택은 대상을 바꿔도 그대로
   const size = $('[data-a=size]', el);
   size.value = S.ptSize;
   size.addEventListener('input', () => {
@@ -1267,7 +1269,10 @@ function makePanel() {
     store.set('uc.ptSize2', S.ptSize);
     if (p.det) renderScatter(p);
   });
-  if (!S.res.info.has_bad) $('[data-r=pseg] button[data-v=bad]', el).disabled = true;
+  if (!S.res.info.has_bad) {
+    $('[data-r=pseg] button[data-v=bad]', el).disabled = true;
+    $('[data-r=pseg] button[data-v=ex]', el).textContent = 'N × ΔValue';
+  }
   bindAxisTips($('[data-r=pseg]', el));
   el.addEventListener('click', (e) => panelClick(p, e));
   const peers = $('[data-r=peers]', el);
@@ -1336,11 +1341,12 @@ function panelClick(p, e) {
     return;
   }
   if (!p.det) return;                                      // 새 대상을 불러오는 중에는 칸 · 칩을 누르지 않음
-  const seg = e.target.closest('[data-r=cseg] button, [data-r=pseg] button');
+  const seg = e.target.closest('[data-r=cseg] button, [data-r=pseg] button, [data-r=sseg] button, [data-r=xseg] button');
   if (seg) {
     if (seg.disabled) return;
-    if (seg.parentElement.dataset.r === 'cseg') { p.cMode = seg.dataset.v; renderScatter(p); } else { p.pMode = seg.dataset.v; renderPeers(p); }
+    const r = seg.parentElement.dataset.r;
     setSeg(seg.parentElement, seg.dataset.v);
+    if (r === 'cseg') { p.cMode = seg.dataset.v; renderScatter(p); } else if (r === 'pseg') { p.pMode = seg.dataset.v; renderPeers(p); } else if (r === 'sseg') { p.pScope = seg.dataset.v; renderPeers(p); } else { p.xMode = seg.dataset.v; renderCompare(p); }
     return;
   }
   const chip = e.target.closest('.chip');
@@ -1591,93 +1597,258 @@ function renderScatter(p) {
   el.innerHTML = s;
 }
 
+// ── 경로 비교: STEP 전체(이 STEP에서 계산한 모든 조합 · 위 funnel과 같은 눈금) · 같은 Order(고른 Order들을 다른 Unit으로 지난 조합) ──
+const P_AXIS = { judg: '종합 점수', mean: 'y_value 평균', bad: 'bad 비율' };
+const exName = () => (S.res && S.res.info.has_bad ? '초과 bad' : 'N × ΔValue');   // 순위 기준
+
+// STEP 전체 조합은 STEP마다 한 번 받아 둔다
+function stepData(step) {
+  const key = `${S.runId}|${step}`;
+  let e = S.stepCache.get(key);
+  if (!e) {
+    e = { data: null, err: null };
+    e.promise = api(`/api/runs/${S.runId}/step/${step}`).then((d) => { e.data = d; }, (err) => { e.err = err.message; });
+    S.stepCache.set(key, e);
+  }
+  return e;
+}
+
+// 경로 → 비교용 글자 (Order 번호:Unit 번호를 Order 순서로)
+const flatKey = (flat) => { const a = []; for (let i = 0; i < flat.length; i += 2) a.push(flat[i] + ':' + flat[i + 1]); return a.join('|'); };
+const selKey = (sel) => sel.slice().sort((a, b) => a[0] - b[0]).map(([q, u]) => q + ':' + u).join('|');
+function flatLabel(D, flat) {
+  const out = [];
+  for (let i = 0; i < flat.length; i += 2) { const o = D.orders[flat[i]]; out.push(`${o.name}:${o.units[flat[i + 1]].name}`); }
+  return out.join(' → ');
+}
+
 function renderPeers(p) {
   const D = p.det;
   const el = $('[data-r=peers]', p.el);
   const [W, H] = svgBox(el);
   const m = p.pMode;
-  const P = D.peers.filter((q) => q[m] != null);
-  if (!P.length) { el.innerHTML = `<text x="20" y="40" fill="${C.ink2}">비교할 경로가 없습니다</text>`; return; }
+  const stepView = p.pScope === 'step';
+  const sel = D.selection;
+  const sv = { judg: sel.judg, mean: sel.vmean, bad: sel.bad, ex: sel.ex }[m];      // 지금 선택의 값 (따로 크게 그림)
+  const pts = [];
+  let bnd = D.peer_bounds;
+  let info = null;
+  if (stepView) {
+    const e = stepData(D.step);
+    if (!e.data) {
+      renderPeerCap(p, null, e.err);
+      el.innerHTML = `<text x="20" y="40" fill="${C.ink2}">${e.err ? '‘같은 Order’를 누르면 고른 Order들의 다른 Unit 조합을 봅니다' : 'STEP 전체 조합을 불러오는 중…'}</text>`;
+      if (!e.err) e.promise.then(() => { if (S.panel === p && p.det === D && p.pScope === 'step') renderPeers(p); });
+      return;
+    }
+    info = e.data;
+    bnd = info.bounds;
+    const key = selKey(p.sel);
+    const vals = info[m];
+    for (let i = 0; i < info.n.length; i++) {
+      if (!vals || vals[i] == null || flatKey(info.items[i]) === key) continue;
+      pts.push({ n: info.n[i], v: vals[i], f: info.flag[i], s: i });
+    }
+  } else {
+    for (const q of D.peers) if (q.g !== D.sel_group && q[m] != null) pts.push({ n: q.n, v: q[m], f: 0, g: q.g });
+  }
+  renderPeerCap(p, info, null);
+  if (!pts.length && sv == null) { el.innerHTML = `<text x="20" y="40" fill="${C.ink2}">비교할 경로가 없습니다</text>`; return; }
   const L = 56, R = W - 12, T = 10, B = H - 46;
-  const nmax = Math.max(...P.map((q) => q.n)) * 1.15;
-  const bd = D.peer_bounds && D.peer_bounds[m];
-  const bn = D.peer_bounds ? D.peer_bounds.n : [];
-  let [lo, hi] = symRange(bd, bn, P.map((q) => q[m]));
+  const ns = pts.map((q) => q.n).concat(sv != null ? [sel.n] : []);
+  const bd = bnd && bnd[m];
+  const bn = bnd ? bnd.n : [];
+  let xs;
+  let xt;
+  let rb = bd;                                      // 세로 범위를 잡을 띠 (보이는 웨이퍼 수 구간만)
+  if (stepView) {                                   // 위 funnel처럼 웨이퍼 수는 로그 눈금
+    const n0 = Math.max(1, Math.min(...ns) / 1.25);
+    const n1 = Math.max(...ns) * 1.25;
+    xs = scaleLog(n0, n1, L, R);
+    xt = logTicks(n0, n1).map((v) => ({ v, l: fmt.int(v) }));
+    if (bd) {
+      const vis = bn.map((n, i) => (n >= n0 && n <= n1 ? i : -1)).filter((i) => i >= 0);
+      rb = { lo: vis.map((i) => bd.lo[i]), hi: vis.map((i) => bd.hi[i]), mid: bd.mid };
+    }
+  } else {
+    const nmax = Math.max(...ns) * 1.15;
+    xs = scaleLin(0, nmax, L, R);
+    xt = linTicks(0, nmax, 5).map((v) => ({ v, l: fmt.int(v) }));
+  }
+  let [lo, hi] = symRange(rb, rb ? rb.lo.map((_, i) => i) : [], pts.map((q) => q.v).concat(sv != null ? [sv] : []));
   if (m === 'bad') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
-  const xs = scaleLin(0, nmax, L, R);
   const ys = scaleLin(lo, hi, B, T);
-  const clip = 'pclip';
-  let s = `<defs><clipPath id="${clip}"><rect x="${L}" y="${T}" width="${R - L}" height="${B - T}"/></clipPath></defs><g clip-path="url(#${clip})">`;
+  let s = `<defs><clipPath id="pclip"><rect x="${L}" y="${T}" width="${R - L}" height="${B - T}"/></clipPath></defs><g clip-path="url(#pclip)">`;
   if (bd) {
     s += band(bn, bd.lo, bd.hi, xs, ys, [lo, hi]);
     if (bd.mid != null) s += `<line x1="${L}" x2="${R}" y1="${ys(bd.mid)}" y2="${ys(bd.mid)}" stroke="${C.line2}" stroke-dasharray="4 3"/>`;
   }
   s += '</g>';
-  const yt = m === 'judg' ? [] : linTicks(lo, hi, 4).map((v) => ({ v, l: m === 'bad' ? Math.round(v * 100) + '%' : fmt.tick(v) }));
-  s += axes({ L, R, T, B, xs, ys, xt: linTicks(0, nmax, 5).map((v) => ({ v, l: fmt.int(v) })), yt, xl: '웨이퍼 수', yl: { judg: '종합 점수', mean: 'y_value 평균', bad: 'bad 비율' }[m], yo: 42 });
-  const ordered = P.slice().sort((a, b) => (a.g === D.sel_group ? 1 : 0) - (b.g === D.sel_group ? 1 : 0));
-  for (const q of ordered) {
-    const on = q.g === D.sel_group;
-    s += `<circle cx="${xs(q.n).toFixed(1)}" cy="${ys(q[m]).toFixed(1)}" r="${on ? 6 : 4}" fill="${on ? C.bad : C.muted}" opacity="${on ? 1 : 0.85}" data-g="${q.g}"/>`;
+  const tick = (v) => (m === 'bad' ? Math.round(v * 100) + '%' : m === 'ex' && D.has_bad && v ? fmt.signed(v) : fmt.tick(v));
+  const yt = m === 'judg' ? [] : linTicks(lo, hi, 4).map((v) => ({ v, l: tick(v) }));
+  s += axes({ L, R, T, B, xs, ys, xt, yt, xl: '웨이퍼 수', yl: m === 'ex' ? (D.has_bad ? '초과 bad (장)' : 'N × ΔValue') : P_AXIS[m], yo: 42 });
+  const color = (f) => (f === 1 ? C.bad : f === 2 ? C.good : C.muted);
+  pts.sort((a, b) => (a.f ? 1 : 0) - (b.f ? 1 : 0));   // 기준선 밖 · 좋은 쪽 점이 위에 보이게
+  for (const q of pts) {
+    s += `<circle cx="${xs(q.n).toFixed(1)}" cy="${ys(q.v).toFixed(1)}" r="${stepView ? 3.5 : 4}" fill="${stepView ? color(q.f) : C.muted}" opacity="${stepView && q.f === 1 ? 0.6 : 0.85}" `
+      + `${q.s != null ? `data-s="${q.s}"` : `data-g="${q.g}"`}/>`;
+  }
+  if (sv != null) {                                 // 지금 선택: 빨간 점 + 고리
+    const x = xs(sel.n).toFixed(1);
+    const y = ys(sv).toFixed(1);
+    s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ink}" stroke-width="1.3" pointer-events="none"/><circle cx="${x}" cy="${y}" r="6" fill="${C.bad}" data-cur="1"/>`;
   }
   el.innerHTML = s;
 }
 
+// 경로 비교 위 한 줄: 지금 경로가 비교 범위 안에서 몇 번째인지 (Certainty · 순위 기준)
+function renderPeerCap(p, info, err) {
+  const D = p.det;
+  const el = $('[data-r=pcap]', p.el);
+  const sel = D.selection;
+  const who = sameSel(p.sel, p.spec.items) ? '지금 경로' : '지금 선택(탐색 중)';
+  const rk = (v) => (v == null ? '–' : `${v}위`);
+  if (p.pScope === 'step') {
+    if (err) { el.innerHTML = `<span class="warntxt">${esc(err)}</span>`; return; }
+    const r = sel.step_rank;
+    el.textContent = r ? `${who}: 이 STEP 조합 ${fmt.int(r.total)}개 중 Certainty ${rk(r.cert)} · ${exName()} ${rk(r.ex)}`
+      + (info && info.shown < info.total ? ` · 기준선 안 조합은 ${fmt.int(info.shown)}개만 그림` : '') : '';
+    return;
+  }
+  const others = D.peers.filter((q) => q.g !== D.sel_group);
+  const cr = sel.certainty == null ? null : 1 + others.filter((q) => q.certainty != null && q.certainty > sel.certainty).length;
+  const er = sel.ex == null ? null : 1 + others.filter((q) => q.ex != null && q.ex > sel.ex).length;
+  const orders = sel.items.map(([q]) => D.orders[q].name).join(' · ');
+  el.textContent = `${who}: 같은 Order(${orders})의 Unit 조합 ${fmt.int(others.length + 1)}개 중 Certainty ${rk(cr)} · ${exName()} ${rk(er)}`;
+}
+
 function peerTip(p, e) {
-  const c = e.target.closest('circle[data-g]');
+  const c = e.target.closest('circle[data-s], circle[data-g], circle[data-cur]');
   if (!c || !p.det) { hideTip(); return; }
   const D = p.det;
-  const g = +c.dataset.g;
-  const q = D.peers.find((x) => x.g === g);
-  const grp = D.groups[g];
-  showTip(`<b>${esc(grp.label)}</b>${g === D.sel_group ? ' (지금 선택)' : ''}<br>웨이퍼 ${fmt.int(q.n)}장${q.bad != null ? ' · bad ' + fmt.pct(q.bad) : ''} · y_value 평균 ${fmt.num(q.mean)}<br>Certainty ${q.certainty == null ? '–' : q.certainty.toFixed(2)}`, e.clientX, e.clientY);
+  const body = (n, bad, mean, ex, cert) => `웨이퍼 ${fmt.int(n)}장${bad != null ? ' · bad ' + fmt.pct(bad) : ''} · y_value 평균 ${fmt.num(mean)}`
+    + `<br>${exName()} ${ex == null ? '–' : D.has_bad ? fmt.signed(ex, 1) + '장' : fmt.num(ex)} · Certainty ${cert == null ? '–' : cert.toFixed(2)}`;
+  let h;
+  if (c.dataset.cur) {
+    const s = D.selection;
+    h = `<b>${esc(s.label)}</b> (${sameSel(p.sel, p.spec.items) ? '지금 경로' : '지금 선택'})<br>${body(s.n, s.bad, s.vmean, s.ex, s.certainty)}`;
+  } else if (c.dataset.s != null) {
+    const d = stepData(D.step).data;
+    if (!d) { hideTip(); return; }
+    const i = +c.dataset.s;
+    const f = d.flag[i];
+    h = `<b>${esc(flatLabel(D, d.items[i]))}</b>${f === 1 ? ' · 기준선 밖' : f === 2 ? ' · good path' : ''}<br>${body(d.n[i], d.bad ? d.bad[i] : null, d.mean[i], d.ex[i], d.cert[i])}`;
+  } else {
+    const g = +c.dataset.g;
+    const q = D.peers.find((x) => x.g === g);
+    h = `<b>${esc(D.groups[g].label)}</b><br>${body(q.n, q.bad, q.mean, q.ex, q.certainty)}`;
+  }
+  showTip(h, e.clientX, e.clientY);
+}
+
+// 이 경로 vs 다른 Unit에서 비교할 웨이퍼 묶음.
+// 합쳐 보기 = 이 경로 · 같은 Order를 다른 Unit으로 지난 웨이퍼, 나눠 보기 = Order마다 Unit이 맞는지로 나눔
+// (Order 2~3개는 맞음 · 다름 조합마다, 4개 이상은 맞는 Order 수로. Order가 1개면 나눌 것이 없어 합쳐 보기)
+function compareGroups(p) {
+  const D = p.det;
+  const w = D.wafers;
+  const items = D.selection.items;
+  const k = items.length;
+  if (p.xMode !== 'parts' || k < 2) {
+    const mem = [];
+    const rest = [];
+    w.g.forEach((g, i) => (g === D.sel_group ? mem : rest).push(i));
+    return { parts: false, GR: [[mem, '이 경로', C.bad], [rest, '다른 Unit', C.muted]] };
+  }
+  const hit = D.groups.map((g) => g.units.map((u, j) => u === items[j][1]));     // 조합마다 Order별로 Unit이 맞는지
+  const unit = (j) => D.orders[items[j][0]].units[items[j][1]].name;
+  const bit = (b, j) => (b >> (k - 1 - j)) & 1;
+  let groups;
+  let keyOf;
+  if (k <= 3) {
+    const pats = [];
+    for (let b = (1 << k) - 1; b >= 0; b--) pats.push(b);
+    const ones = (b) => { let c = 0; for (let j = 0; j < k; j++) c += bit(b, j); return c; };
+    pats.sort((a, b) => ones(b) - ones(a) || b - a);
+    groups = pats.map((b) => ({ key: b, label: Array.from({ length: k }, (_, j) => (bit(b, j) ? unit(j) : '다른 Unit')).join(' · '), idx: [] }));
+    keyOf = (h) => h.reduce((a, x, j) => a | ((x ? 1 : 0) << (k - 1 - j)), 0);
+  } else {
+    groups = Array.from({ length: k + 1 }, (_, i) => ({ key: k - i, label: i === 0 ? `이 경로 (${k}/${k})` : `${k - i}/${k}개 맞음`, idx: [] }));
+    keyOf = (h) => h.filter(Boolean).length;
+  }
+  const at = new Map(groups.map((g, i) => [g.key, i]));
+  const gk = hit.map(keyOf);
+  w.g.forEach((g, i) => groups[at.get(gk[g])].idx.push(i));
+  return { parts: true, count: k > 3, GR: groups.filter((g, i) => i === 0 || g.idx.length).map((g, i) => [g.idx, g.label, i === 0 ? C.bad : C.muted]) };
+}
+
+// 글자 폭 어림 (한글은 넓게) · 칸에 맞게 자르기
+const textW = (t, px = 12) => [...t].reduce((a, ch) => a + (/[ㄱ-힝]/.test(ch) ? px : px * 0.58), 0);
+function fitText(t, maxW, px = 12) {
+  if (textW(t, px) <= maxW) return t;
+  let s = t;
+  while (s.length > 1 && textW(s + '…', px) > maxW) s = s.slice(0, -1);
+  return s + '…';
 }
 
 function renderCompare(p) {
   const D = p.det;
   const el = $('[data-r=compare]', p.el);
-  const [W] = svgBox(el);
+  const [W, H] = svgBox(el);
   const w = D.wafers;
-  const mem = [];
-  const rest = [];
-  w.g.forEach((g, i) => (g === D.sel_group ? mem : rest).push(i));
-  const L = 66, R = W - 46;
-  const GR = [[mem, '이 경로', C.bad], [rest, '다른 Unit', C.muted]];
+  const seg = $('[data-r=xseg]', p.el);
+  const k = D.selection.items.length;
+  const pb = $('button[data-v=parts]', seg);
+  pb.disabled = k < 2;
+  pb.title = k < 2 ? 'Order가 1개인 경로는 나눌 부분이 없습니다' : 'Order마다 이 경로의 Unit을 지났는지로 나눠 봅니다 (조합 탓인지 Unit 하나 탓인지)';
+  const { parts, count, GR } = compareGroups(p);
+  setSeg(seg, parts ? 'parts' : 'all');
+  const G = GR.length;
+  const L = Math.round(Math.min(W * 0.45, Math.max(66, Math.max(...GR.map((g) => textW(g[1]))) + 12)));
+  const R = W - 46;
+  const lab = (t) => esc(fitText(t, L - 10));
   let s = '';
   let y0 = 18;
   if (D.has_bad) {
     const br = (a) => (a.length ? a.reduce((x, i) => x + w.b[i], 0) / a.length : 0);
-    const bmax = Math.max(br(mem), br(rest), 0.05) * 1.25;
-    s += `<text x="0" y="${y0}" fill="${C.ink2}" font-size="12">bad 비율</text>`;
-    GR.forEach(([a, l, c], k) => {
-      const y = y0 + 10 + k * 24;
+    const bmax = Math.max(...GR.map(([a]) => br(a)), 0.05) * 1.25;
+    s += `<text x="0" y="${y0}" fill="${C.ink2}" font-size="12">bad 비율${count ? ' · 맞는 Order 수로 묶음' : ''}</text>`;
+    GR.forEach(([a, l, c], i) => {
+      const y = y0 + 10 + i * 24;
       const bw = (br(a) / bmax) * (R - L);
-      s += `<text x="${L - 6}" y="${y + 12}" text-anchor="end" fill="${C.ink2}" font-size="12">${l}</text><rect x="${L}" y="${y}" width="${bw.toFixed(1)}" height="16" rx="3" fill="${c}"/>`
+      s += `<text x="${L - 6}" y="${y + 12}" text-anchor="end" fill="${C.ink2}" font-size="12">${lab(l)}</text><rect x="${L}" y="${y}" width="${bw.toFixed(1)}" height="16" rx="3" fill="${c}"/>`
         + `<text x="${(L + bw + 5).toFixed(1)}" y="${y + 12}" fill="${C.ink}" font-size="12">${fmt.pct(br(a))} · ${fmt.int(a.length)}장</text>`;
     });
-    y0 += 84;
+    y0 += 10 + G * 24 + 26;
   }
-  const vals = [...mem, ...rest].map((i) => w.v[i]);
-  if (!vals.length) { el.innerHTML = s; return; }
+  const row = Math.min(52, Math.floor((H - y0 - 58) / G));   // 묶음이 많으면 줄 높이를 줄이고, 그래도 모자라면 분포는 생략
+  const vals = GR.flatMap(([a]) => a.map((i) => w.v[i]));
+  if (row < 30 || !vals.length) {
+    if (vals.length) s += `<text x="0" y="${y0}" fill="${C.ink2}" font-size="12">y_value 분포는 묶음이 많아 생략했습니다 (합쳐 보기에서 봄)</text>`;
+    el.innerHTML = s;
+    return;
+  }
   const log = vals.every((v) => v > 0) && skewness(vals) > 1;
   const sv = vals.slice().sort((a, b) => a - b);
   const xs = log ? scaleLog(sv[0] / 1.05, sv[sv.length - 1] * 1.05, L, R) : scaleLin(sv[0], sv[sv.length - 1], L, R);
   s += `<text x="0" y="${y0}" fill="${C.ink2}" font-size="12">y_value 분포 · 상자 = 가운데 50% · 굵은 선 = 중앙값</text>`;
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
-  GR.forEach(([a, l, c], k) => {
-    const v = a.map((i) => w.v[i]).sort((x, y) => x - y);
-    const y = y0 + 14 + k * 52;
-    s += `<text x="${L - 6}" y="${y + 20}" text-anchor="end" fill="${C.ink2}" font-size="12">${l}</text>`;
+  GR.forEach(([a, l, c], i) => {
+    const v = a.map((j) => w.v[j]).sort((x, y) => x - y);
+    const y = y0 + 14 + i * row;
+    const mid = y + row * 0.31;
+    const bh = row * 0.25;
+    s += `<text x="${L - 6}" y="${(y + row * 0.38).toFixed(1)}" text-anchor="end" fill="${C.ink2}" font-size="12">${lab(l)}</text>`;
     if (!v.length) return;
     const q = [0.05, 0.25, 0.5, 0.75, 0.95].map((pp) => quantile(v, pp));
     const show = a.length > 600 ? a.filter((_, j) => j % Math.ceil(a.length / 600) === 0) : a;
-    for (const i of show) s += `<circle cx="${xs(w.v[i]).toFixed(1)}" cy="${(y + 16 + rnd() * 26).toFixed(1)}" r="2" fill="${c}" opacity="0.45"/>`;
-    s += `<line x1="${xs(q[0])}" x2="${xs(q[4])}" y1="${y + 16}" y2="${y + 16}" stroke="${c}" stroke-width="1.2"/>`
-      + `<rect x="${xs(q[1])}" y="${y + 3}" width="${Math.max(1, xs(q[3]) - xs(q[1]))}" height="26" fill="none" stroke="${c}" stroke-width="1.4"/>`
-      + `<line x1="${xs(q[2])}" x2="${xs(q[2])}" y1="${y + 1}" y2="${y + 31}" stroke="${C.ink}" stroke-width="2.2"/>`;
+    for (const j of show) s += `<circle cx="${xs(w.v[j]).toFixed(1)}" cy="${(mid + rnd() * 2 * bh).toFixed(1)}" r="2" fill="${c}" opacity="0.45"/>`;
+    s += `<line x1="${xs(q[0])}" x2="${xs(q[4])}" y1="${mid}" y2="${mid}" stroke="${c}" stroke-width="1.2"/>`
+      + `<rect x="${xs(q[1])}" y="${mid - bh}" width="${Math.max(1, xs(q[3]) - xs(q[1]))}" height="${2 * bh}" fill="none" stroke="${c}" stroke-width="1.4"/>`
+      + `<line x1="${xs(q[2])}" x2="${xs(q[2])}" y1="${mid - bh * 1.15}" y2="${mid + bh * 1.15}" stroke="${C.ink}" stroke-width="2.2"/>`;
   });
-  const ay = y0 + 14 + 2 * 52 + 4;
+  const ay = y0 + 14 + G * row + 4;
   const tk = log ? logTicks(sv[0], sv[sv.length - 1]) : linTicks(sv[0], sv[sv.length - 1], 5);
   s += `<line x1="${L}" x2="${R}" y1="${ay}" y2="${ay}" stroke="${C.line2}"/>` + tk.map((v) => `<text x="${xs(v)}" y="${ay + 14}" text-anchor="middle" fill="${C.ink2}" font-size="11">${fmt.tick(v)}</text>`).join('')
     + `<text x="${(L + R) / 2}" y="${ay + 30}" text-anchor="middle" fill="${C.ink}" font-size="12">y_value${log ? ' (로그 눈금)' : ''}</text>`;

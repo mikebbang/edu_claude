@@ -213,13 +213,17 @@
         <svg class="chart-svg" data-r="scatter" role="img" aria-label="웨이퍼 산점도"></svg>
       </div>
       <div class="sub cell">
-        <div class="sub-head"><h3>같은 Order 다른 경로 비교</h3><span class="grow"></span>
-          <span class="seg small" data-r="pseg" role="group" aria-label="비교 차트 세로축"><button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button></span>
+        <div class="sub-head"><h3>경로 비교</h3><span class="grow"></span>
+          <span class="seg small" data-r="sseg" role="group" aria-label="비교 범위"><button type="button" data-v="step" class="on" title="이 STEP에서 계산한 모든 조합 (위 funnel을 이 STEP만 걸러 본 것)">STEP 전체</button><button type="button" data-v="same" title="지금 고른 Order들을 다른 Unit으로 지난 조합">같은 Order</button></span>
+          <span class="seg small" data-r="pseg" role="group" aria-label="비교 차트 세로축"><button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="mean">y_value 평균</button><button type="button" data-v="bad">bad 비율</button><button type="button" data-v="ex">초과 bad</button></span>
         </div>
-        <svg class="chart-svg" data-r="peers" role="img" aria-label="같은 Order 다른 경로 비교"></svg>
+        <div class="legend pcap" data-r="pcap"></div>
+        <svg class="chart-svg" data-r="peers" role="img" aria-label="경로 비교"></svg>
       </div>
       <div class="sub cell">
-        <div class="sub-head"><h3>이 경로 vs 다른 Unit</h3><span class="grow"></span><span class="muted small">같은 Order를 다른 Unit으로 지난 웨이퍼와 비교</span></div>
+        <div class="sub-head"><h3>이 경로 vs 다른 Unit</h3><span class="grow"></span>
+          <span class="seg small" data-r="xseg" role="group" aria-label="비교 방법"><button type="button" data-v="all" class="on" title="같은 Order를 다른 Unit으로 지난 웨이퍼를 한데 모아 비교">합쳐 보기</button><button type="button" data-v="parts">나눠 보기</button></span>
+        </div>
         <svg class="chart-svg" data-r="compare" role="img" aria-label="이 경로와 같은 Order를 다른 Unit으로 지난 웨이퍼 비교"></svg>
       </div>
     </div>
