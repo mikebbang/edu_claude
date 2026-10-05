@@ -575,7 +575,7 @@ function renderHistory() {
       <td class="l jid" title="${esc(jobs.join(', '))}">${many(jobs)}</td>
       <td class="l nowrap" title="${esc(dates.join(', '))}">${many(dates)}</td>
       <td class="l"><div class="fname">${esc(v.file_name || v.file_id)}</div>${v.job_source ? `<div class="note">${v.file_exists ? 'DB에서 가져옴' : v.status === 'error' ? 'DB에서 가져오지 못함' : 'DB에서 가져오는 중'} (job_id ${esc(v.job_source)})</div>` : v.file_exists ? '' : '<div class="note">올린 파일이 지워져 다시 계산은 못 함</div>'}</td>
-      <td class="l">${esc(st.main)}${st.extra ? `<div class="note">${esc(st.extra)}</div>` : ''}</td>
+      <td class="l"><span class="nowrap">${esc(st.main)}</span>${st.extra ? `<div class="note">${esc(st.extra)}</div>` : ''}</td>
       <td class="l">${resultCell(v)}</td>
       <td><button type="button" class="ghost del" data-del="${esc(v.id)}" title="${busy ? '계산을 멈추고 기록 삭제' : '기록 삭제'}">삭제</button></td>
     </tr>`;
@@ -641,17 +641,18 @@ function renderSummary() {
   const notes = [...I.notes];
   if (j.spread > 1) notes.push(`z가 이론보다 ${j.spread.toFixed(2)}배 퍼짐 → 기준선도 ${j.spread.toFixed(2)}배로`);
   const st = I.settings;
-  const groups = j.groups.map((g) => `<tr><td>Order ${esc(g.name)}</td><td>${fmt.int(g.possible)}</td><td>${g.z == null ? '–' : g.z.toFixed(2)}</td><td>${g.z_spread == null ? '–' : g.z_spread.toFixed(2)}</td></tr>`).join('');
+  const groups = j.groups.map((g) => `<tr><td>Order ${esc(g.name)}</td><td class="num">${fmt.int(g.possible)}</td><td class="num">${g.z == null ? '–' : g.z.toFixed(2)}</td><td class="num">${g.z_spread == null ? '–' : g.z_spread.toFixed(2)}</td></tr>`).join('');
+  const line = (label, html, cls = '') => `<div class="kv${cls ? ' ' + cls : ''}"><b>${label}</b><span>${html}</span></div>`;
   const v = S.runs.find((x) => x.id === S.runId);
   const jobs = d.job_ids || [];
   $('#summary').innerHTML = [
-    `<div><b>실행</b> job_id ${jobs.length ? esc(jobs.join(', ')) : '–'} · analysis_date ${esc((d.analysis_dates || []).join(', ') || '–')}${v ? ` · ${esc(v.file_name || '')} · ${when(v.created, true)} 실행` : ''}</div>`,
-    `<div><b>데이터</b> 웨이퍼 ${fmt.int(d.wafers)}장${d.n_excluded ? ` (good_bad N 등 ${fmt.int(d.n_excluded)}장은 계산에서 뺌)` : ''} · lot ${fmt.int(d.lots)}개 · STEP ${fmt.int(d.steps)}개 (STEP SEQ ${fmt.int(d.step_seqs)}개)${d.bad_rate != null ? ` · bad 비율 ${fmt.pct(d.bad_rate)}` : ''}</div>`,
-    `<div><b>보정</b> ${notes.length ? esc(notes.join(' · ')) : '필요 없음'}</div>`,
-    `<div><b>판정</b> 조합 ${fmt.int(j.combos)}개 검사 (가능한 ${fmt.int(j.possible)}개 중) → 기준선 밖 ${fmt.int(j.over)}개 → 혐의 대상 ${fmt.int(j.targets)}개 · ${I.timings.total}초</div>`,
-    I.warnings.length ? `<div class="warn"><b>확인할 점</b> ${esc(I.warnings.join(' · '))}</div>` : '',
+    line('실행', `job_id ${jobs.length ? esc(jobs.join(', ')) : '–'} · analysis_date ${esc((d.analysis_dates || []).join(', ') || '–')}${v ? ` · ${esc(v.file_name || '')} · ${when(v.created, true)} 실행` : ''}`),
+    line('데이터', `웨이퍼 ${fmt.int(d.wafers)}장${d.n_excluded ? ` (good_bad N 등 ${fmt.int(d.n_excluded)}장은 계산에서 뺌)` : ''} · lot ${fmt.int(d.lots)}개 · STEP ${fmt.int(d.steps)}개 (STEP SEQ ${fmt.int(d.step_seqs)}개)${d.bad_rate != null ? ` · bad 비율 ${fmt.pct(d.bad_rate)}` : ''}`),
+    line('보정', notes.length ? esc(notes.join(' · ')) : '필요 없음'),
+    line('판정', `조합 ${fmt.int(j.combos)}개 검사 (가능한 ${fmt.int(j.possible)}개 중) → 기준선 밖 ${fmt.int(j.over)}개 → 혐의 대상 ${fmt.int(j.targets)}개 · ${I.timings.total}초`),
+    I.warnings.length ? line('확인할 점', esc(I.warnings.join(' · ')), 'warn') : '',
     `<details><summary>판정 정보</summary>
-      <table><tr><th>묶음</th><th>가능한 조합</th><th>기본 기준 z</th><th>기준 z (퍼짐 반영)</th></tr>${groups}</table>
+      <table><tr><th>묶음</th><th class="num">가능한 조합</th><th class="num">기본 기준 z</th><th class="num">기준 z (퍼짐 반영)</th></tr>${groups}</table>
       <div class="muted small">5%를 묶음 ${j.groups.length}개에 똑같이 나눔 · 조합이 나온 가장 큰 Order 수 ${j.depth} ·
       ${j.sigma ? `Order 2개 이상에서 웨이퍼 ${j.sigma}장 미만은 가장 나쁜 경우에도 기준선을 넘을 수 없어 만들지 않음` : '넘을 수 없는 조합 없음'} ·
       같은 Order ${fmt.int(j.same_orders)}개는 앞 Order로 합쳐 계산 · MIN_N ${st.min_n} · MAX_DEPTH ${st.max_depth ?? '제한 없음'}</div></details>`,
@@ -922,6 +923,9 @@ function sortedRows() {
   return rows;
 }
 
+const helpIcon = (key, pre = false) => `<span class="help${pre ? ' pre' : ''}" data-help="${key}">${ICON_INFO}</span>`;
+const stepTag = (text, tag) => (tag ? `<div class="step has-tag"><span class="st">${esc(text)}</span><span class="tag">${esc(tag)}</span></div>` : `<div class="step">${esc(text)}</div>`);
+
 // 경로: "O1:유닛" 덩어리 안에서는 줄을 바꾸지 않고, 덩어리 사이(→ 앞)에서만 바꾼다
 const pathHtml = (parts) => parts.map((p, j) => `<span class="ps">${j ? '<span class="arr">→ </span>' : ''}${esc(p)}</span>`).join('');
 const stepText = (t) => `${t.step_name}${t.desc ? ' · ' + t.desc : ''}`;
@@ -930,8 +934,12 @@ function renderRanking() {
   const hasBad = S.res.info.has_bad;
   const cols = COLS.filter((c) => hasBad || !c.bad);
   const label = (c) => (c.key === 'excess' && !hasBad ? 'N × ΔValue' : c.label);   // good_bad가 없으면 순위 기준 = 웨이퍼 수 × Value 차이
-  const help = (c) => `<span class="help" data-help="${c.key === 'excess' && !hasBad ? 'dvalue' : c.key}">${ICON_INFO}</span>`;
-  const head = cols.map((c) => `<th class="${c.left ? 'l' : 'num'}" data-k="${c.key}">${label(c)}${help(c)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▴' : ' ▾') : ''}</th>`).join('');
+  const help = (c) => helpIcon(c.key === 'excess' && !hasBad ? 'dvalue' : c.key, !c.left);
+  const head = cols.map((c) => {
+    const sort = S.sort.key === c.key ? `<span class="sort">${S.sort.dir > 0 ? '▴' : '▾'}</span>` : '';
+    return c.left ? `<th class="l" data-k="${c.key}">${label(c)}${help(c)}${sort}</th>`
+      : `<th class="num" data-k="${c.key}">${sort}${help(c)}${label(c)}</th>`;
+  }).join('');
   const sw = Math.round((S.res.info.settings.same_wafers ?? 0.9) * 100);
   const cert = (v) => (v == null ? '–' : v.toFixed(2));
   const cell = (c, r, i) => {
@@ -953,7 +961,7 @@ function renderRanking() {
   const subCell = (c, t) => {                          // 묶인 대상 한 줄 (순위 칸 = ↳)
     switch (c.key) {
       case 'rank': return '<td class="num"><span class="sub-mark" aria-hidden="true">↳</span></td>';
-      case 'path': return `<td class="l pathcell" title="${esc(stepText(t) + '\n' + t.path)}"><div class="step"><span class="tag">겹침 ${fmt.pct(t.overlap, 0)}</span>${esc(stepText(t))}</div>`
+      case 'path': return `<td class="l pathcell" title="${esc(stepText(t) + '\n' + t.path)}">${stepTag(stepText(t), `겹침 ${fmt.pct(t.overlap, 0)}`)}`
         + `<div class="path">${pathHtml(t.parts)}</div></td>`;
       default: return cell(c, t, -1);
     }
@@ -962,7 +970,7 @@ function renderRanking() {
   const curId = S.cur ? S.cur.id : null;
   const body = sortedRows().map(({ r, i }) => {
     const cls = [S.picks.includes(i) ? 'on' : '', multi && curId === 'r' + r.rank ? 'cur' : ''].join(' ').trim();
-    const subs = S.open.has(i) ? r.merged.map((t) => `<tr class="sub${curId === 'x' + t.key ? ' cur' : ''}" data-i="${i}" data-key="${esc(t.key)}">${cols.map((c) => subCell(c, t)).join('')}</tr>`).join('') : '';
+    const subs = S.open.has(i) ? r.merged.map((t) => `<tr class="child${curId === 'x' + t.key ? ' cur' : ''}" data-i="${i}" data-key="${esc(t.key)}">${cols.map((c) => subCell(c, t)).join('')}</tr>`).join('') : '';
     return `<tr data-i="${i}" class="${cls}">${cols.map((c) => cell(c, r, i)).join('')}</tr>${subs}`;
   }).join('');
   $('#ranking').innerHTML = S.res.ranking.length
@@ -983,7 +991,7 @@ function scrollInto(wrap, tr) {
   else if (r.bottom > w.bottom) wrap.scrollTop += r.bottom - w.bottom;
 }
 function revealRow(i, key = null) {
-  const tr = key != null ? $(`#ranking tr[data-key="${CSS.escape(key)}"]`) : $(`#ranking tr[data-i="${i}"]:not(.sub)`);
+  const tr = key != null ? $(`#ranking tr[data-key="${CSS.escape(key)}"]`) : $(`#ranking tr[data-i="${i}"]:not(.child)`);
   if (tr) scrollInto($('#ranking'), tr);
 }
 
@@ -1141,25 +1149,30 @@ function drawStrip(items, data) {
         if (k < j && x.kind === 'rank' && ov[j][k] >= 0.5 && (v == null || ov[j][k] > v)) { v = ov[j][k]; rank = S.res.ranking[x.i].rank; }
       });
     }
-    return v == null ? '' : `<span class="ovb${v >= 0.9 ? ' hi' : ''}">${rank}위와 웨이퍼 ${fmt.pct(v, 0)} 겹침</span>`;
+    return v == null ? '' : `<span class="ovb${v >= 0.9 ? ' hi' : ''}">${rank}위와 ${fmt.pct(v, 0)} 겹침</span>`;
   };
+  const val = (r, k) => (!r ? '…' : hasBad ? fmt.pct(r[k]) : fmt.num(r[k]));
   const body = items.map((t, j) => {
     const r = rows ? rows[j] : null;
-    const sub = t.kind !== 'rank';
-    const name = sub ? `<span class="tag">${t.kind === 'member' ? '같은 웨이퍼' : '다른 STEP 의심'}</span>` : `<span class="no">${S.res.ranking[t.i].rank}위</span>`;
-    const num = !r ? '<span class="muted">…</span>'
-      : (hasBad ? `<b class="badtxt">${fmt.pct(r.bad)}</b><span class="muted"> vs ${fmt.pct(r.rest_bad)}</span>` : `<b>${fmt.num(r.vmean)}</b><span class="muted"> vs ${fmt.num(r.rest_vmean)}</span>`)
-        + `<span class="muted"> · ${fmt.int(r.n)}장</span>`;
-    return `<div class="cmp-row${sub ? ' sub' : ''}${t.id === curId ? ' cur' : ''}" role="row" tabindex="0" data-id="${esc(t.id)}" data-j="${j}" aria-current="${t.id === curId}">
-      <div class="cmp-name" role="cell" title="${esc(stepText(t.t) + '\n' + t.t.path)}">${name}<span class="step">${esc(t.t.step_name)}</span><span class="cmp-path">${esc(t.t.path)}</span></div>
+    const child = t.kind !== 'rank';
+    const no = child ? '<span class="sub-mark" aria-hidden="true">↳</span>' : `${S.res.ranking[t.i].rank}위`;
+    const tag = child ? (t.kind === 'member' ? '같은 웨이퍼' : '다른 STEP 의심') : '';
+    return `<div class="cmp-row${child ? ' child' : ''}${t.id === curId ? ' cur' : ''}" role="row" tabindex="0" data-id="${esc(t.id)}" data-j="${j}" aria-current="${t.id === curId}">
+      <div class="cmp-no" role="cell">${no}</div>
+      <div class="cmp-name" role="cell" title="${esc(stepText(t.t) + '\n' + t.t.path)}">${stepTag(stepText(t.t), tag)}<div class="path">${pathHtml(t.t.parts || t.t.path.split(' → '))}</div></div>
       <div class="cmp-track" role="cell">${grid}${r ? dots(r[vk], r[rk]) : ''}</div>
-      <div class="cmp-num" role="cell">${num}</div>
+      <div class="num ${hasBad ? 'badtxt' : 'strong'}" role="cell">${val(r, vk)}</div>
+      <div class="num muted" role="cell">${val(r, rk)}</div>
+      <div class="num muted" role="cell">${r ? fmt.int(r.n) : '…'}</div>
       <div class="cmp-ov" role="cell">${badge(t, j)}</div></div>`;
   }).join('');
-  const axis = `<div class="cmp-row cmp-axis" aria-hidden="true"><div class="cmp-name muted small">대상</div>
-    <div class="cmp-track">${ticks.map((v) => `<span class="cmp-tk" style="left:${P(v)}">${tickLabel(v)}</span>`).join('')}</div>
-    <div class="cmp-num muted small">${hasBad ? 'bad: 이 경로 vs 다른 Unit' : 'y_value 평균: 이 경로 vs 다른 Unit'}</div>
-    <div class="cmp-ov muted small">웨이퍼 겹침<span class="help" data-help="overlap">${ICON_INFO}</span></div></div>`;
+  const axis = `<div class="cmp-row cmp-axis" role="row">
+    <div class="cmp-no" role="columnheader">순위</div><div class="cmp-name" role="columnheader">STEP / Path</div>
+    <div class="cmp-track" role="columnheader" aria-label="${hasBad ? 'bad 비율 눈금' : 'y_value 평균 눈금'}">${ticks.map((v) => `<span class="cmp-tk" style="left:${P(v)}" aria-hidden="true">${tickLabel(v)}</span>`).join('')}</div>
+    <div class="num" role="columnheader"><span class="dot" style="background:var(--bad)"></span>이 경로</div>
+    <div class="num" role="columnheader"><span class="dot" style="background:var(--muted)"></span>다른 Unit</div>
+    <div class="num" role="columnheader">웨이퍼</div>
+    <div class="cmp-ov" role="columnheader">웨이퍼 겹침${helpIcon('overlap')}</div></div>`;
   const had = document.activeElement && document.activeElement.closest ? document.activeElement.closest('#cmp-body .cmp-row[data-id]') : null;
   const box = $('#cmp-body');
   box.innerHTML = `<div role="table" aria-label="고른 대상 비교">${axis}${body}</div>`
@@ -1459,14 +1472,14 @@ function renderRelated(p) {
     const tr = (t, rep) => {
       const id = rep ? 'r' + row.rank : 'x' + t.key;
       return `<tr class="${rep ? 'rep' : ''}${id === sp.id ? ' cur' : ''}">
-      <td class="l pathcell" title="${esc(stepText(t) + '\n' + t.path)}"><div class="step">${rep ? '<span class="tag">대표</span> ' : ''}${esc(stepText(t))}</div><div class="path">${pathHtml(t.parts)}</div></td>
+      <td class="l pathcell" title="${esc(stepText(t) + '\n' + t.path)}">${stepTag(stepText(t), rep ? '대표' : '')}<div class="path">${pathHtml(t.parts)}</div></td>
       <td class="num">${fmt.int(t.n)}</td><td class="num">${rep ? '–' : fmt.pct(t.overlap, 0)}</td>${hasBad ? `<td class="num">${fmt.pct(t.bad)}</td>` : ''}
       <td class="num">${ex(t.excess)}</td><td class="num">${cert(t.certainty)}</td>
       <td class="l diff">${rep ? '' : diffText(t, hasBad)}</td>
       <td class="num">${act(id)}</td></tr>`;
     };
     h += `<div class="rel-head"><b>같은 웨이퍼로 ${row.rank}위에 묶인 대상</b><span class="muted small">웨이퍼가 ${Math.round((sw ?? 0.9) * 100)}% 이상 같은 대상은 순위표에 한 줄로 나오고, 그 줄의 "+${row.merged.length} 같은 웨이퍼"로 펼칩니다</span></div>
-      <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">겹침<span class="help" data-help="overlap">${ICON_INFO}</span></th>${hasBad ? '<th class="num">Bad %</th>' : ''}
+      <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">${helpIcon('overlap', true)}겹침</th>${hasBad ? '<th class="num">Bad %</th>' : ''}
       <th class="num">${hasBad ? 'Excess bad' : 'N × ΔValue'}</th><th class="num">Certainty</th><th class="l">서로 다른 웨이퍼</th><th></th></tr></thead>
       <tbody>${tr(row, true)}${row.merged.map((t) => tr(t, false)).join('')}</tbody></table></div>
       <div class="muted small rel-why">대표는 ${metric}가 큰 쪽이고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)입니다.

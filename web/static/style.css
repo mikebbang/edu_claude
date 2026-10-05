@@ -126,6 +126,7 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .concl-stat { font-size: 14px; }
 /* 용어 도움말 */
 .help { display: inline-block; margin-left: 3px; color: var(--muted); font-size: 11px; font-weight: 400; cursor: help; }
+.help.pre { margin: 0 3px 0 0; }                     /* 오른쪽 맞춤 제목: ⓘ를 글자 앞에 두어 글자 끝이 숫자 끝과 맞게 */
 .help:hover { color: var(--accent); }
 .help-term { border-bottom: 1px dotted var(--muted); cursor: help; }
 .help-tip { max-width: 280px; }
@@ -170,9 +171,11 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .bar i { display: block; height: 100%; width: 0; background: var(--ring); transition: width .2s; }
 .summary { display: flex; flex-direction: column; gap: 3px; }
 .summary b { font-weight: 600; }
+.summary .kv { display: grid; grid-template-columns: 64px minmax(0, 1fr); }   /* 줄 제목 칸을 고정해 내용이 같은 자리에서 시작 */
 .summary details summary { cursor: pointer; color: var(--ink2); }
 .summary table { border-collapse: collapse; margin: 6px 0 2px; }
 .summary td, .summary th { padding: 2px 12px 2px 0; text-align: left; font-weight: 400; }
+.summary td.num, .summary th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .summary th { color: var(--ink2); }
 .warn { color: var(--warn); }
 .grid-main { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 12px; }
@@ -206,6 +209,13 @@ table.rank tbody tr.on td:first-child { box-shadow: inset 3px 0 0 var(--ring); f
 table.rank .step { color: var(--ink2); }
 table.rank tr.on .step { color: inherit; opacity: 0.8; }
 table.rank .note { color: var(--ink2); font-size: 11px; margin-top: 2px; }
+table.rank td.num { font-variant-numeric: tabular-nums; }
+table.rank th .sort { margin-left: 3px; }
+table.rank th.num .sort { margin: 0 3px 0 0; }
+/* STEP 줄 끝에 붙는 태그 (대표 · 겹침 · 같은 웨이퍼): STEP 이름은 다른 줄과 같은 자리에서 시작하고, 길면 이름만 줄임 */
+.step.has-tag { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.step.has-tag .st { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step.has-tag .tag { flex: none; margin: 0; color: var(--accent); background: var(--accent-bg); }
 /* 순위표: 숫자 열은 줄바꿈 없이 좁게, 경로 열이 남는 폭을 다 쓴다. 경로는 "O1:유닛" 덩어리 사이에서만 줄을 바꾼다 */
 table.rk td { white-space: nowrap; }
 table.rk td.pathcell { white-space: normal; width: 100%; max-width: 0; }
@@ -214,12 +224,10 @@ table.rk .note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient
 /* 여러 개 골랐을 때 아래 상세에 보이는 줄 · 묶인 대상 줄("+n 같은 웨이퍼"로 펼침) */
 table.rank tbody tr.cur td { background: color-mix(in srgb, var(--ring) 16%, var(--card)); }
 table.rank tbody tr.cur td:first-child { box-shadow: inset 4px 0 0 var(--ring); font-weight: 700; }
-table.rank tbody tr.sub td { background: color-mix(in srgb, var(--band) 55%, var(--card)); font-size: 11.5px; padding-top: 4px; padding-bottom: 4px; }
-table.rank tbody tr.sub:hover td { background: var(--hover); }
-table.rank tbody tr.sub.cur td { background: color-mix(in srgb, var(--ring) 16%, var(--card)); color: var(--accent); }
-table.rank tbody tr.sub td.pathcell { padding-left: 16px; }
-table.rank .sub-mark { color: var(--muted); }
-table.rk tr.sub .tag { margin: 0 6px 0 0; color: var(--accent); background: var(--accent-bg); }
+table.rank tbody tr.child td { background: color-mix(in srgb, var(--band) 55%, var(--card)); font-size: 11.5px; padding-top: 4px; padding-bottom: 4px; }
+table.rank tbody tr.child:hover td { background: var(--hover); }
+table.rank tbody tr.child.cur td { background: color-mix(in srgb, var(--ring) 16%, var(--card)); color: var(--accent); }
+.sub-mark { color: var(--muted); }
 .grp-line { margin-top: 3px; }
 button.grp { height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-bg); border: 1px solid var(--accent-line); }
 button.grp:hover, button.grp[aria-expanded=true] { background: var(--card); }
@@ -229,11 +237,11 @@ button.grp:hover, button.grp[aria-expanded=true] { background: var(--card); }
 .path .arr { color: var(--muted); font-weight: 400; }
 .hist-wrap { max-height: 236px; }
 table.hist th { cursor: default; }
-table.hist td { vertical-align: middle; }
+table.hist td { vertical-align: baseline; }          /* 여러 줄인 칸이 있어도 칸마다 첫 줄이 같은 높이 */
 table.hist .nowrap { white-space: nowrap; }
 table.hist .jid { font-weight: 500; white-space: nowrap; }
-table.hist .fname { word-break: break-all; }
-table.hist .err { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.hist .fname { min-width: 130px; overflow-wrap: anywhere; }
+table.hist .err { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* 전체 문구는 마우스를 올리면 */
 table.hist .del { height: 24px; padding: 0 8px; font-size: 12px; white-space: nowrap; }
 table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
 #hist-q { width: 210px; }
@@ -244,25 +252,31 @@ table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
 @keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .live { animation: none; } }
 
-/* 비교 띠: 고른 대상마다 한 줄 · 모든 줄이 같은 눈금 (회색 점 = 다른 Unit, 빨간 점 = 이 경로) */
+/* 비교 띠: 고른 대상마다 한 줄 · 모든 줄이 같은 눈금 (회색 점 = 다른 Unit, 빨간 점 = 이 경로).
+   칸: 순위 | STEP / Path | 띠 | 이 경로 | 다른 Unit | 웨이퍼 | 겹침 — 줄마다 같은 칸 너비라 글자가 같은 자리에서 시작하고, 숫자는 오른쪽 끝을 맞춘다 */
 .cmp .card-head { flex-wrap: wrap; row-gap: 4px; }
 .cmp-legend { margin-top: 0; }
-.cmp-body { overflow-x: auto; }
-.cmp-row { display: grid; grid-template-columns: minmax(170px, 1.2fr) minmax(220px, 2fr) 178px 172px; align-items: center; gap: 12px; min-width: 760px;
-  padding: 5px 8px; border-radius: 8px; cursor: pointer; outline: none; }
+.cmp-body { overflow-x: auto; margin: 0 -8px; }       /* 줄 안쪽 여백만큼 바깥으로: 글자가 카드 제목과 같은 자리에서 시작 */
+.cmp-row { display: grid; grid-template-columns: 40px minmax(200px, 1.3fr) minmax(220px, 2fr) 70px 70px 60px 112px; align-items: center; gap: 12px; min-width: 860px;
+  padding: 6px 8px; border-radius: 8px; cursor: pointer; outline: none; }
 .cmp-row:hover { background: var(--hover); }
 .cmp-row:focus-visible { box-shadow: inset 0 0 0 2px var(--ring); }
 .cmp-row.cur { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--ring); }
 .cmp-row.cur:focus-visible { box-shadow: inset 3px 0 0 var(--ring), inset 0 0 0 2px var(--ring); }
-.cmp-row.sub .cmp-name { padding-left: 20px; }
-.cmp-axis { cursor: default; padding-top: 0; padding-bottom: 3px; margin-bottom: 3px; border-bottom: 1px solid var(--line); border-radius: 0; }
+.cmp-row.child { background: color-mix(in srgb, var(--band) 45%, var(--card)); }
+.cmp-row.child:hover { background: var(--hover); }
+.cmp-row.child.cur { background: var(--accent-bg); }
+.cmp-axis { cursor: default; padding-top: 0; padding-bottom: 4px; margin-bottom: 3px; border-bottom: 1px solid var(--line); border-radius: 0; font-size: 12px; color: var(--ink2); }
 .cmp-axis:hover { background: none; }
-.cmp-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
-.cmp-name .no { flex: none; min-width: 30px; font-weight: 700; }
-.cmp-name .step { flex: none; color: var(--ink2); }
-.cmp-name .tag { flex: none; margin: 0; color: var(--accent); background: var(--accent-bg); }
-.cmp-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-.cmp-row.cur .cmp-name, .cmp-row.cur .cmp-name .step { color: var(--accent); }
+.cmp-no { text-align: right; font-weight: 700; white-space: nowrap; }
+.cmp-axis .cmp-no { font-weight: 400; }
+.cmp-name { min-width: 0; }
+.cmp-name .step { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-row.cur .cmp-name, .cmp-row.cur .cmp-name .step, .cmp-row.cur .cmp-no { color: var(--accent); }
+.cmp-row .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cmp-row .num.strong { font-weight: 600; }
+.cmp-axis .cmp-ov { padding-left: 8px; }            /* 제목 글자를 겹침 배지 안 글자와 같은 자리에서 시작 */
+.cmp-axis .num .dot { margin-right: 4px; }
 .cmp-track { position: relative; height: 22px; margin: 0 10px; }
 .cmp-axis .cmp-track { height: 16px; }
 .cmp-gl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
@@ -273,7 +287,6 @@ table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
 .cmp-row.cur .cmp-dot { box-shadow: 0 0 0 2px var(--accent-bg); }
 .cmp-dot.rest { background: var(--muted); }
 .cmp-dot.this { background: var(--bad); }
-.cmp-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ovb { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--hover); color: var(--ink2); font-size: 11.5px; white-space: nowrap; }
 .ovb.hi { background: var(--accent-bg); color: var(--accent); }
 .cmp-more { padding: 6px 8px 0; }
