@@ -116,8 +116,8 @@
   </ul>
   <h3>이 경로 vs 다른 Unit</h3>
   <p>고른 Order를 모두 지난 웨이퍼를 이 경로와 <b>같은 Order를 다른 Unit으로 지난 웨이퍼</b>로 나눠 bad 비율 막대와 y_value 분포(상자 = 가운데 50%, 굵은 선 = 중앙값)를 비교합니다(<b>합쳐 보기</b>, 기본).
-  <b>나눠 보기</b>는 Order마다 이 경로의 Unit을 지났는지로 나눠, 조합 탓인지 Unit 하나 탓인지 봅니다. Order가 2~3개면 맞음 · 다름 조합마다, 4개 이상이면 맞는 Order 수로 묶습니다. Order가 1개인 경로는 나눌 것이 없어 버튼이 꺼집니다.</p>
-  <div class="ex">예(나눠 보기): ETC101-A · ETC301-A 30.9% · ETC101-A · 다른 Unit 5.4% · 다른 Unit · ETC301-A 6.2% · 둘 다 다른 Unit 5.8% → 두 Unit을 함께 지날 때만 bad가 높으니 조합 탓입니다.</div>
+  <b>나눠 보기</b>는 Order마다 이 경로의 Unit을 지났는지로 나눠, 조합 탓인지 Unit 하나 탓인지 봅니다. 이름의 <b>다른 Unit</b>은 같은 Order에서 이 경로가 아닌 Unit입니다(예: O3:다른 Unit = O3에서 ETC301-A가 아닌 Unit). Order가 2~3개면 맞음 · 다름 조합마다, 4개 이상이면 맞는 Order 수로 묶습니다. Order가 1개인 경로는 나눌 것이 없어 버튼이 꺼집니다.</p>
+  <div class="ex">예(나눠 보기): O1:ETC101-A · O3:ETC301-A 30.9% · O1:ETC101-A · O3:다른 Unit 5.4% · O1:다른 Unit · O3:ETC301-A 6.2% · O1:다른 Unit · O3:다른 Unit 5.8% → 두 Unit을 함께 지날 때만 bad가 높으니 조합 탓입니다.</div>
   <div class="ex">예: 경로가 O1:A → O3:B면 O1과 O3를 모두 지난 웨이퍼 중 O1:A · O3:B로 지난 웨이퍼가 "이 경로", O1:A → O3:C나 O1:D → O3:B처럼 지난 웨이퍼가 "다른 Unit"입니다. O1이나 O3를 지나지 않은 웨이퍼는 둘 다에서 빠집니다.</div>
 
   <h2 id="same">같은 웨이퍼로 묶인 대상</h2>

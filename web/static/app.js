@@ -1762,6 +1762,7 @@ function compareGroups(p) {
   }
   const hit = D.groups.map((g) => g.units.map((u, j) => u === items[j][1]));     // 조합마다 Order별로 Unit이 맞는지
   const unit = (j) => D.orders[items[j][0]].units[items[j][1]].name;
+  const order = (j) => D.orders[items[j][0]].name;
   const bit = (b, j) => (b >> (k - 1 - j)) & 1;
   let groups;
   let keyOf;
@@ -1770,7 +1771,7 @@ function compareGroups(p) {
     for (let b = (1 << k) - 1; b >= 0; b--) pats.push(b);
     const ones = (b) => { let c = 0; for (let j = 0; j < k; j++) c += bit(b, j); return c; };
     pats.sort((a, b) => ones(b) - ones(a) || b - a);
-    groups = pats.map((b) => ({ key: b, label: Array.from({ length: k }, (_, j) => (bit(b, j) ? unit(j) : '다른 Unit')).join(' · '), idx: [] }));
+    groups = pats.map((b) => ({ key: b, label: Array.from({ length: k }, (_, j) => `${order(j)}:${bit(b, j) ? unit(j) : '다른 Unit'}`).join(' · '), idx: [] }));
     keyOf = (h) => h.reduce((a, x, j) => a | ((x ? 1 : 0) << (k - 1 - j)), 0);
   } else {
     groups = Array.from({ length: k + 1 }, (_, i) => ({ key: k - i, label: i === 0 ? `이 경로 (${k}/${k})` : `${k - i}/${k}개 맞음`, idx: [] }));
@@ -1803,8 +1804,16 @@ function renderCompare(p) {
   pb.title = k < 2 ? 'Order가 1개인 경로는 나눌 부분이 없습니다' : 'Order마다 이 경로의 Unit을 지났는지로 나눠 봅니다 (조합 탓인지 Unit 하나 탓인지)';
   const { parts, count, GR } = compareGroups(p);
   setSeg(seg, parts ? 'parts' : 'all');
+  const cap = $('[data-r=xcap]', p.el);
+  cap.hidden = !parts;
+  if (parts) {
+    const orders = D.selection.items.map(([q]) => D.orders[q].name).join(' · ');
+    cap.textContent = count
+      ? `n/${k}개 맞음 = 고른 Order ${k}개 중 n개에서 이 경로의 Unit을 지남 (나머지 Order는 다른 Unit) · Order(${orders})를 모두 지난 웨이퍼 ${fmt.int(w.g.length)}장을 나눔`
+      : `다른 Unit = 같은 Order에서 이 경로가 아닌 Unit · Order(${orders})를 모두 지난 웨이퍼 ${fmt.int(w.g.length)}장을 나눔`;
+  }
   const G = GR.length;
-  const L = Math.round(Math.min(W * 0.45, Math.max(66, Math.max(...GR.map((g) => textW(g[1]))) + 12)));
+  const L = Math.round(Math.min(W * (parts ? 0.5 : 0.45), Math.max(66, Math.max(...GR.map((g) => textW(g[1]))) + 12)));
   const R = W - 46;
   const lab = (t) => esc(fitText(t, L - 10));
   let s = '';
@@ -1816,7 +1825,7 @@ function renderCompare(p) {
     GR.forEach(([a, l, c], i) => {
       const y = y0 + 10 + i * 24;
       const bw = (br(a) / bmax) * (R - L);
-      s += `<text x="${L - 6}" y="${y + 12}" text-anchor="end" fill="${C.ink2}" font-size="12">${lab(l)}</text><rect x="${L}" y="${y}" width="${bw.toFixed(1)}" height="16" rx="3" fill="${c}"/>`
+      s += `<text x="0" y="${y + 12}" fill="${C.ink2}" font-size="12">${lab(l)}</text><rect x="${L}" y="${y}" width="${bw.toFixed(1)}" height="16" rx="3" fill="${c}"/>`
         + `<text x="${(L + bw + 5).toFixed(1)}" y="${y + 12}" fill="${C.ink}" font-size="12">${fmt.pct(br(a))} · ${fmt.int(a.length)}장</text>`;
     });
     y0 += 10 + G * 24 + 26;
@@ -1839,7 +1848,7 @@ function renderCompare(p) {
     const y = y0 + 14 + i * row;
     const mid = y + row * 0.31;
     const bh = row * 0.25;
-    s += `<text x="${L - 6}" y="${(y + row * 0.38).toFixed(1)}" text-anchor="end" fill="${C.ink2}" font-size="12">${lab(l)}</text>`;
+    s += `<text x="0" y="${(y + row * 0.38).toFixed(1)}" fill="${C.ink2}" font-size="12">${lab(l)}</text>`;
     if (!v.length) return;
     const q = [0.05, 0.25, 0.5, 0.75, 0.95].map((pp) => quantile(v, pp));
     const show = a.length > 600 ? a.filter((_, j) => j % Math.ceil(a.length / 600) === 0) : a;
