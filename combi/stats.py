@@ -188,14 +188,6 @@ def part_shrink(n, pn2, N):
     return np.sqrt(np.clip(1 - np.asarray(pn2, dtype=float) / np.asarray(n, dtype=float), 1 / N, None))
 
 
-def log_shift(v):
-    """로그로 바꿀 때 빼는 값: 모두 0보다 크면 0, 아니면 가장 작은 값보다 조금 아래(가운데 값 거리의 1%)라
-    가장 작은 값도 로그가 된다 (prepare의 Value '로그로'와 같은 방식)"""
-    v = np.asarray(v, dtype=float)
-    lo = float(v.min())
-    return 0.0 if lo > 0 else lo - max(1e-9, 0.01 * float(np.median(v - lo)))
-
-
 def shrink(n, N):
     """√(1 − 웨이퍼 수 ÷ 전체 웨이퍼 수). 전체 평균에는 조합의 웨이퍼도 들어 있어서, 조합 평균이 전체 평균에서
     우연히 벗어나는 폭은 σ/√n보다 이만큼 좁다. z를 이 값으로 나누면 조합을 나머지 웨이퍼와 비교한 z가 된다"""

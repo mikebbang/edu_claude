@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from .engine import MISSING, mean_z, members_of, order_text, share_group
+from .engine import MISSING, mean_z, members_of, order_text, share_group, sig_mean_z
 from .ranking import expected_bad, metric, path_label, same_order_paths
-from .stats import log_shift, shrink
+from .stats import binom_fix, shrink, spread_of
 
 GRAY_MAX = 40000             # funnel에 그리는 기준선 안 점의 최대 수 (넘으면 고르게 골라 그림 · 모양은 같음)
 PEER_MAX = 600               # 같은 Order 다른 경로 비교에 그리는 경로의 최대 수 (웨이퍼가 많은 순)
@@ -28,16 +28,32 @@ def _grid(lo, hi, k=80):
     return lo * (hi / lo) ** (np.arange(k) / (k - 1))
 
 
+def _sig_spread(result):
+    """신호마다 퍼짐 배수 (Value, bad): Order 1개 조합의 z_Value · z_bad를 결합 z와 같은 방법(spread_of)으로 잰다.
+    신호 하나로만 판정할 때의 기준 = Order 수별 기본 기준 z × 이 배수. 실행 기록(state)에는 실행할 때 잰 것을 저장해 둔다.
+    예전 코드로 저장한 기록에는 없다(None)"""
+    sp = getattr(result, 'sig_spread', None)
+    if sp is not None or not hasattr(result, 'ranked'):
+        return sp
+    one = [c for c in result.res['combos'] if c['k'] == 1]
+    has_b = result.data['B'] is not None
+    if not result.cfg.spread_adjust:
+        sp = (1.0, 1.0 if has_b else None)
+    else:
+        sp = (spread_of(np.array([c['z_y'] for c in one])), spread_of(np.array([c['z_b'] for c in one])) if has_b else None)
+    result.sig_spread = sp
+    return sp
+
+
 def _scales(result):
-    """세 가지 세로축의 기준: 판정용 Value(Y)와 원래 y_value · bad 비율의 평균과 흩어짐"""
+    """세로축의 기준: 판정용 Value(Y)와 원래 y_value · bad 비율의 평균과 흩어짐, Order 수별 기본 기준 z, 신호마다 퍼짐 배수.
+    sign은 y_value가 판정용 Value와 같은 방향이면 1 (낮을수록 나쁘면 판정용 Value는 부호를 바꿔 쓴다)"""
     d, r = result.data, result.res
     v = np.asarray(d['value'], dtype=float)
     p0 = r['p0']
-    shift = log_shift(v)                                    # y_value 로그 (기하평균 축): 0 이하가 있으면 가장 작은 값보다 조금 아래를 기준으로
-    lv = np.log(v - shift)
     return {'mu': r['mu'], 'sd': r['sd'], 'N': r['N'], 'vmu': float(np.mean(v)), 'vsd': float(np.std(v, ddof=1)),
             'p0': p0, 'bsd': math.sqrt(p0 * (1 - p0)) if p0 is not None else None,
-            'lmu': float(lv.mean()), 'lsd': float(lv.std(ddof=1)), 'lshift': shift}
+            'zk': list(result.zk), 's': result.spread, 'sign': 1.0 if result.cfg.higher_is_worse else -1.0, 'sp': _sig_spread(result)}
 
 
 def _half(sc, z, n):
@@ -46,27 +62,57 @@ def _half(sc, z, n):
     return z * sc['sd'] / np.sqrt(n) * shrink(n, sc['N'])
 
 
-def _bounds(sc, thr, grid):
-    """세 가지 세로축의 경계선(위 · 아래). 종합은 판정 기준, y_value 평균 · bad 비율은 그 신호만 볼 때의 기준선"""
+def _bounds(sc, grid, zl=None):
+    """세로축마다 경계선(위 · 아래). 종합 · y_value · bad 비율은 점을 자기 기준 대비 위치로 그리므로 Order 1개 기준 띠:
+    종합은 판정 기준(기본 기준 z × 퍼짐 배수), y_value · bad 비율(yz · bz)은 그 신호 하나로만 판정할 때의 기준(기본 기준 z × 그 신호의 퍼짐 배수).
+    초과 bad는 값을 그대로 그리므로 Order 수 기준 z zl(없으면 Order 1개)로 잡은 bad 비율 기준선을 장 수로 바꾼 것"""
+    zk1 = sc['zk'][1] if len(sc['zk']) > 1 else math.nan
+    zl = zk1 if zl is None else zl
     sh = shrink(grid, sc['N'])
-    out = {'n': nums(grid, 3),
-           'judg': {'lo': nums(sc['mu'] - _half(sc, thr, grid)), 'hi': nums(sc['mu'] + _half(sc, thr, grid)), 'mid': num(sc['mu'])},
-           'mean': {'lo': nums(sc['vmu'] - thr * sc['vsd'] / np.sqrt(grid) * sh), 'hi': nums(sc['vmu'] + thr * sc['vsd'] / np.sqrt(grid) * sh),
-                    'mid': num(sc['vmu'])}}
-    if sc['lmu'] is not None:                               # y_value 로그(기하평균): 로그 눈금에서 위아래 같은 폭인 기준선
-        hl = thr * sc['lsd'] / np.sqrt(grid) * sh
-        k_ = sc['lshift']
-        out['lmean'] = {'lo': nums(np.exp(sc['lmu'] - hl) + k_), 'hi': nums(np.exp(sc['lmu'] + hl) + k_), 'mid': num(math.exp(sc['lmu']) + k_),
-                        'shift': num(k_, 9)}
+    hj = _half(sc, zk1 * sc['s'], grid)
+    out = {'n': nums(grid, 3), 'judg': {'lo': nums(sc['mu'] - hj), 'hi': nums(sc['mu'] + hj), 'mid': num(sc['mu'])}}
+    sp = sc['sp']
+    if sp is not None:
+        hy = zk1 * sp[0] * sc['vsd'] / np.sqrt(grid) * sh
+        out['yz'] = {'lo': nums(sc['vmu'] - hy), 'hi': nums(sc['vmu'] + hy), 'mid': num(sc['vmu'])}
     if sc['p0'] is not None:
-        hw = thr * sc['bsd'] / np.sqrt(grid) * sh
-        lo, hi = np.clip(sc['p0'] - hw, 0, 1), np.clip(sc['p0'] + hw, 0, 1)
-        out['bad'] = {'lo': nums(lo), 'hi': nums(hi), 'mid': num(sc['p0'])}
+        sb = sp[1] if sp is not None else sc['s']           # 예전 기록(신호별 퍼짐 배수 없음)은 결합 z의 퍼짐 배수
+        band = lambda z_: (np.clip(sc['p0'] - z_ * sc['bsd'] / np.sqrt(grid) * sh, 0, 1), np.clip(sc['p0'] + z_ * sc['bsd'] / np.sqrt(grid) * sh, 0, 1))
+        if sp is not None:
+            lo, hi = band(zk1 * sb)
+            out['bz'] = {'lo': nums(lo), 'hi': nums(hi), 'mid': num(sc['p0'])}
+        lo, hi = band(zl * sb)
         out['ex'] = {'lo': nums(grid * (lo - sc['p0']), 3), 'hi': nums(grid * (hi - sc['p0']), 3), 'mid': 0.0}   # 초과 bad = 장 수
     else:                                                   # good_bad가 없으면 순위 기준 N × ΔValue (판정용 Value 눈금)
-        h = grid * _half(sc, thr, grid)
+        h = grid * _half(sc, zl * sc['s'], grid)
         out['ex'] = {'lo': nums(-h, 3), 'hi': nums(h, 3), 'mid': 0.0}
     return out
+
+
+def _sig_heights(sc, zy, zb, zkk, n):
+    """신호 하나로만 판정할 때의 높이(원래 단위)와 그 신호만 볼 때 기준선 밖인지(1 나쁜 쪽 · −1 좋은 쪽 · 0 안).
+    자기 기준(Order 수별 기본 기준 z zkk × 그 신호의 퍼짐 배수) 대비 위치를 Order 1개 기준 띠에 맞추므로 띠 밖 ⇔ 그 신호 하나로도 판정 밖.
+    Order 1개 경로는 y_value 평균 그대로다(순위 보정 · part 맞춤을 했으면 그만큼 다름). bad 비율 높이는 0~1로 자른다"""
+    zy, zkk, n = (np.asarray(x, dtype=float) for x in (zy, zkk, n))
+    f = sc['zk'][1] / zkk * shrink(n, sc['N']) / np.sqrt(n)
+    side = lambda z, s_: np.where(z > zkk * s_, 1, np.where(z < -zkk * s_, -1, 0))
+    out = {'yz': sc['vmu'] + sc['sign'] * zy * f * sc['vsd'], 'oy': side(zy, sc['sp'][0])}
+    if sc['p0'] is not None and zb is not None:
+        zb = np.asarray(zb, dtype=float)
+        out.update(bz=np.clip(sc['p0'] + zb * f * sc['bsd'], 0, 1), ob=side(zb, sc['sp'][1]))
+    return out
+
+
+def _sig_z(d, r, m):
+    """웨이퍼 묶음 m의 신호별 z (Value, bad): 조합의 z_Value · z_bad와 같은 계산 (bad는 이항 꼬리 보정까지). good_bad가 없으면 bad는 None"""
+    if m.sum() < 2:
+        return math.nan, math.nan
+    zy = sig_mean_z(d, r, 'y', m)
+    if 'b' not in r['signals']:
+        return zy, None
+    bad01 = np.nan_to_num(d['bad'])
+    e_ = d['bad_exp'][m].mean() if d.get('bad_exp') is not None else bad01.mean()
+    return zy, sig_mean_z(d, r, 'b', m) * float(binom_fix([m.sum()], [bad01[m].sum()], e_)[0])
 
 
 def _excess(d, r, m):
@@ -81,7 +127,8 @@ def _excess(d, r, m):
 
 
 def _step_table(result):
-    """경로 비교(STEP 전체)용: 계산한 모든 조합을 STEP 순서로 모은 표 (웨이퍼 수 · Certainty · 초과 bad · y_value 평균 · bad 비율 · 판정 · 경로).
+    """경로 비교(STEP 전체)용: 계산한 모든 조합을 STEP 순서로 모은 표 (웨이퍼 수 · Certainty · 초과 bad · y_value 평균 · bad 비율 ·
+    신호별 z · Order 수 · 판정 · 경로).
     실행 기록(state)에는 실행할 때 만든 것을 저장해 두고, 전체 결과에서는 처음 쓸 때 만든다. 예전 코드로 저장한 기록에는 없다(None)"""
     t = getattr(result, 'step_table', None)
     if t is not None or not hasattr(result, 'ranked'):
@@ -95,6 +142,9 @@ def _step_table(result):
          'ex': np.array([metric(c, r) for c in combos], dtype=np.float32),
          'vmean': np.array([c['vmean'] for c in combos], dtype=np.float32),
          'bad': np.array([c['bad_rate'] for c in combos], dtype=np.float32) if d['B'] is not None else None,
+         'zy': np.array([c['z_y'] for c in combos], dtype=np.float32),
+         'zb': np.array([c['z_b'] for c in combos], dtype=np.float32) if d['B'] is not None else None,
+         'k': k.astype(np.int8),
          'flag': np.array([(1 if c['status'] == 'bad' else 3 if c['status'] == 'inherited' else 4) if c['over']
                            else 2 if c['z'] < -c['thr'] else 0 for c in combos], dtype=np.int8),   # 1 원인 후보 · 3 상속 · 4 하위 기인 · 2 좋은 쪽 · 0 기준선 안
          'ioff': np.r_[0, np.cumsum(2 * k)],                                               # 경로 = items[ioff[i]:ioff[i+1]] (Order, Unit 번갈아)
@@ -134,12 +184,18 @@ def step_payload(result, step):
     zk, s = result.zk, result.spread
     n = t['n'][idx].astype(float)
     nmax = float(n.max()) if len(n) else 10.0
-    return {'step': step, 'total': total, 'shown': len(idx), 'n': [int(v) for v in t['n'][idx]],
-            'judg': nums(sc['mu'] + t['cert'][idx].astype(float) * _half(sc, zk[1] * s, n), 5),
-            'mean': nums(t['vmean'][idx], 5), 'bad': nums(t['bad'][idx], 5) if t['bad'] is not None else None,
-            'ex': nums(t['ex'][idx], 2), 'cert': nums(t['cert'][idx], 3), 'flag': [int(v) for v in t['flag'][idx]],
-            'items': [t['items'][t['ioff'][i]:t['ioff'][i + 1]].tolist() for i in idx],
-            'bounds': _bounds(sc, zk[1] * s, _grid(max(2, result.cfg.min_n), nmax * 1.15))}
+    out = {'step': step, 'total': total, 'shown': len(idx), 'n': [int(v) for v in t['n'][idx]],
+           'judg': nums(sc['mu'] + t['cert'][idx].astype(float) * _half(sc, zk[1] * s, n), 5),
+           'mean': nums(t['vmean'][idx], 5), 'bad': nums(t['bad'][idx], 5) if t['bad'] is not None else None,
+           'ex': nums(t['ex'][idx], 2), 'cert': nums(t['cert'][idx], 3), 'flag': [int(v) for v in t['flag'][idx]],
+           'items': [t['items'][t['ioff'][i]:t['ioff'][i + 1]].tolist() for i in idx],
+           'bounds': _bounds(sc, _grid(max(2, result.cfg.min_n), nmax * 1.15))}
+    if sc['sp'] is not None and t.get('zy') is not None:   # 신호 하나로만 판정할 때의 높이 (예전 코드로 저장한 기록에는 없음)
+        h = _sig_heights(sc, t['zy'][idx], t['zb'][idx] if t['zb'] is not None else None, np.asarray(zk)[t['k'][idx]], n)
+        out.update(yz=nums(h['yz'], 5), oy=h['oy'].tolist())
+        if 'bz' in h:
+            out.update(bz=nums(h['bz'], 5), ob=h['ob'].tolist())
+    return out
 
 
 def _bad_of(d, m):
@@ -204,16 +260,22 @@ def run_payload(result):
     thr = np.array([c['thr'] for c in combos], dtype=float)
     yj = sc['mu'] + z / thr * _half(sc, zk[1] * s, n)       # 종합: 자기 기준 대비 위치를 Order 1개 기준 띠에 맞춘 높이 (띠 밖 ⇔ 판정 밖)
     ym = np.array([c['vmean'] for c in combos], dtype=float)
-    ylm = np.exp(np.array([c.get('lvmean', math.nan) for c in combos], dtype=float)) + sc['lshift']   # 기하평균 (0 이하가 있으면 기준만큼 되돌림)
     yb = np.array([c['bad_rate'] for c in combos], dtype=float) if d['B'] is not None else None
+    if sc['sp'] is not None:                                # y_value · bad 비율: 그 신호 하나로만 판정할 때의 높이 (띠 밖 ⇔ 그 신호로도 판정 밖)
+        sig = _sig_heights(sc, [c['z_y'] for c in combos], [c['z_b'] for c in combos] if yb is not None else None,
+                           np.asarray(zk, dtype=float)[[c['k'] for c in combos]], n)
+    else:
+        sig = {'yz': np.full(len(combos), math.nan), 'oy': np.zeros(len(combos), dtype=int)}
+    yz, oy = sig['yz'], sig['oy']
+    bz, ob = sig.get('bz'), sig.get('ob', np.zeros(len(combos), dtype=int))
     over = np.array([c['over'] for c in combos], dtype=bool)
     good = z < -thr                                         # 경계 밖 · 좋은 쪽 (기준선보다 뚜렷하게 낮음)
     gray = np.flatnonzero(~over & ~good)
     if len(gray) > GRAY_MAX:
         gray = np.sort(np.random.default_rng(0).choice(gray, GRAY_MAX, replace=False))
-    pick = lambda idx: {'n': [int(v) for v in n[idx]], 'judg': nums(yj[idx], 5), 'mean': nums(ym[idx], 5),
-                        'bad': nums(yb[idx], 5) if yb is not None else None, 'lmean': nums(ylm[idx], 5) if ylm is not None else None}
-    marks = []                                              # 경계 밖 점 (bad · good path)
+    pick = lambda idx: {'n': [int(v) for v in n[idx]], 'judg': nums(yj[idx], 5), 'yz': nums(yz[idx], 5),
+                        'bz': nums(bz[idx], 5) if bz is not None else None}
+    marks = []                                              # 경계 밖 점 (bad · good path) · 신호 하나만 보면 밖인 점 (판정은 안 됨)
     steps = d['steps']
     same_as = result.ranked['same_as']
 
@@ -237,15 +299,16 @@ def run_payload(result):
             cur = nxt
         return label
 
-    for i in np.flatnonzero(over | good):
+    for i in np.flatnonzero(over | good | (oy != 0) | (ob != 0)):
         c = combos[i]
         st = steps[c['step']]
-        marks.append({'side': 'bad' if over[i] else 'good', 'n': c['n'], 'judg': num(yj[i], 5), 'mean': num(ym[i], 5),
-                      'lmean': num(ylm[i], 5) if ylm is not None else None,
-                      'bad': num(yb[i], 5) if yb is not None else None, 'rank': rank_of.get(c['key']), 'target': tgt.get(c['key']),
+        side = 'bad' if over[i] else 'good' if good[i] else 'sig'
+        marks.append({'side': side, 'n': c['n'], 'judg': num(yj[i], 5), 'yz': num(yz[i], 5), 'bz': num(bz[i], 5) if bz is not None else None,
+                      'oy': int(oy[i]), 'ob': int(ob[i]), 'mean': num(ym[i], 5), 'bad': num(yb[i], 5) if yb is not None else None,
+                      'rank': rank_of.get(c['key']), 'target': tgt.get(c['key']),
                       'label': f"{st['name']} {path_label(st, c['items'])}", 'k': c['k'], 'certainty': num(c['z'] / c['thr'], 3),
                       'key': c['key'], 'merged': rank_of.get(same_as[c['key']]) if c['key'] in same_as else None,
-                      'status': c['status'] if over[i] else 'good', 'cause': cause_of(c) if over[i] else None})   # bad 원인 후보 · inherited 상속 · explained 하위 기인
+                      'status': c['status'] if over[i] else side, 'cause': cause_of(c) if over[i] else None})   # bad 원인 후보 · inherited 상속 · explained 하위 기인
     groups = {g: m for g, m in result.res['share_groups'].items()}
     counts = result.counts
     info = {
@@ -260,7 +323,7 @@ def run_payload(result):
     lo_n, hi_n = (n.min() * 0.9, n.max() * 1.1) if len(n) else (2, 10)
     return {'info': info, 'ranking': [target_row(result, i + 1, c) for i, c in enumerate(top)],
             'funnel': {'gray': pick(gray), 'gray_total': int((~over & ~good).sum()), 'marks': marks,
-                       'bounds': _bounds(sc, zk[1] * s, _grid(lo_n, hi_n))}}
+                       'bounds': _bounds(sc, _grid(lo_n, hi_n))}}
 
 
 def detail_state(result):
@@ -268,7 +331,8 @@ def detail_state(result):
     d, r = result.data, result.res
     keep = ('N', 'Y', 'B', 'bad', 'value', 'steps', 'assign', 'tk', 't_base', 'part_idx', 'part_sig', 'bad_exp', 'lots', 'wafer_ids')
     return SimpleNamespace(data={k: d[k] for k in keep if k in d}, res={k: r[k] for k in ('mu', 'sd', 'N', 'r', 'p0', 'signals')},
-                           zk=list(result.zk), spread=result.spread, cfg=result.cfg, step_table=_step_table(result))
+                           zk=list(result.zk), spread=result.spread, cfg=result.cfg, step_table=_step_table(result),
+                           sig_spread=_sig_spread(result))
 
 
 def _path_masks(d, step, items):
@@ -338,13 +402,25 @@ def detail_payload(result, step, items):
         thr = math.nan                                      # 계산한 Order 수보다 많이 고르면 그 묶음의 기준이 없을 수 있다
     z = mean_z(d, r, member) if member.sum() >= 2 else math.nan
     sc = _scales(result)
+    zkk = zk[min(k, len(zk) - 1)] if math.isfinite(thr) else math.nan
+
+    def sig_of(m, n_):
+        """웨이퍼 묶음의 y_value · bad 비율 보정 높이와 신호 하나만 볼 때 기준선 밖인지 (기준이 없거나 예전 기록이면 없음)"""
+        if sc['sp'] is None or not math.isfinite(zkk) or n_ < 2:
+            return {}
+        zy_, zb_ = _sig_z(d, r, m)
+        h = _sig_heights(sc, [zy_], [zb_] if zb_ is not None else None, [zkk], [n_])
+        out = {'yz': num(h['yz'][0], 5), 'oy': int(h['oy'][0])}
+        if 'bz' in h:
+            out.update(bz=num(h['bz'][0], 5), ob=int(h['ob'][0]))
+        return out
     sel = {'items': [[q, u] for q, u in items], 'label': path_label(st, items), 'n': int(member.sum()),
            'bad': num(bad01[member].mean(), 4) if has_b and member.any() else None,
            'rest_n': int(rest.sum()), 'rest_bad': num(bad01[rest].mean(), 4) if has_b and rest.any() else None,
            'vmean': num(value[member].mean()) if member.any() else None, 'certainty': num(z / thr, 3) if math.isfinite(thr) else None,
            'k': k, 'group': order_text(k), 'ex': num(_excess(d, r, member), 2) if member.any() else None,
            'judg': num(sc['mu'] + z / thr * float(_half(sc, zk[1] * s, max(1, int(member.sum())))), 5) if math.isfinite(thr) and member.any() else None,
-           'step_rank': None}
+           'step_rank': None, **sig_of(member, int(member.sum()))}
     t = _step_table(result)
     if t is not None:                                      # 이 STEP의 모든 조합 중 몇 번째인가 (Certainty · 초과 bad)
         a, b_ = int(t['start'][step]), int(t['start'][step + 1])
@@ -375,7 +451,7 @@ def detail_payload(result, step, items):
         zg = mean_z(d, r, m) if m.sum() >= 2 else math.nan
         peers.append({'g': int(g), 'n': int(cnt[g]), 'mean': groups[g]['vmean'], 'bad': groups[g]['bad'], 'ex': num(_excess(d, r, m), 2),
                       'judg': num(sc['mu'] + zg / thr * float(_half(sc, zk[1] * s, cnt[g]))) if math.isfinite(thr) else None,
-                      'certainty': num(zg / thr, 3) if math.isfinite(thr) else None})
+                      'certainty': num(zg / thr, 3) if math.isfinite(thr) else None, **sig_of(m, int(cnt[g]))})
     q_last = max(qs)                                        # 시간축: 고른 Order 중 마지막 Order의 track-in 시각
     tk = d['tk'][step][q_last][through].astype(np.int64)
     base_ms = int(d['t_base'].astype('datetime64[ms]').astype(np.int64))
@@ -386,11 +462,7 @@ def detail_payload(result, step, items):
         lot_u, lot_i = np.unique(np.asarray(d['lots'])[through].astype(str), return_inverse=True)
         wafers.update(lots=lot_u.tolist(), li=lot_i.ravel().tolist(), wid=[str(w) for w in np.asarray(d['wafer_ids'])[through]])
     pn = [p['n'] for p in peers] or [result.cfg.min_n]
-    peer_bounds = _bounds(sc, thr, _grid(max(2, result.cfg.min_n), max(pn) * 1.15)) if math.isfinite(thr) else None
-    if peer_bounds:                                         # 종합 축은 큰 funnel과 같은 눈금(자기 기준 대비 위치 × Order 1개 기준 띠)
-        g_ = np.asarray(peer_bounds['n'], dtype=float)
-        peer_bounds['judg'] = {'lo': nums(sc['mu'] - _half(sc, zk[1] * s, g_)), 'hi': nums(sc['mu'] + _half(sc, zk[1] * s, g_)),
-                               'mid': num(sc['mu'])}
+    peer_bounds = _bounds(sc, _grid(max(2, result.cfg.min_n), max(pn) * 1.15), zkk) if math.isfinite(thr) else None   # 종합 · y_value · bad 비율은 큰 funnel과 같은 눈금
     return {'step': step, 'step_name': st['name'], 'desc': st['proc'], 'orders': orders, 'selection': sel, 'groups': groups,
             'sel_group': sel_g, 'peers': peers, 'peer_bounds': peer_bounds, 'wafers': wafers, 'time_order': st['seqs'][q_last]['name'],
             'missing_time': int((~has_t).sum()), 'has_bad': has_b}

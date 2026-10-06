@@ -144,6 +144,7 @@ const HELP = {
   fview_pts: '점 위주: 점이 모인 곳을 크게 보여 줍니다. 점끼리의 차이가 잘 보이지만 띠 양 끝은 잘릴 수 있습니다.',
   follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
   rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
+  sig: '이 축의 신호 하나만 보면 기준선 밖이지만, 두 신호를 합친 판정(종합)에서는 기준선 안이라 혐의 대상이 아닌 경로입니다. 예: y_value는 꽤 높은데 bad는 평소와 같은 경로. 판정에 쓰는 것은 종합이라 순위에 오르지 않습니다.',
   cmp: '빨간 점 = 이 경로, 회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼. 두 점이 멀수록 이 경로만 나쁩니다. 겹침 = 위쪽 순위와 웨이퍼가 겹치는 비율(50% 이상만 표시).',
 };
 
@@ -358,12 +359,8 @@ async function loadResult(id, token, note = '') {
   $('#results').hidden = false;
   setSetup(false);                                     // 결과가 화면 위로 오게 설정은 한 줄로 접는다
   syncEmpty();
-  const hasBad = S.res.info.has_bad;
-  for (const b of $$('#yseg button[data-v=bad]')) b.disabled = !hasBad;
-  if (!hasBad && S.yMode === 'bad') setSeg($('#yseg'), (S.yMode = 'judg'));
-  const hasLog = !!S.res.funnel.bounds.lmean;           // y_value 로그: 값이 모두 0보다 크고 이번 코드로 계산한 기록만
-  for (const b of $$('#yseg button[data-v=lmean]')) { b.classList.toggle('off', !hasLog); b.setAttribute('aria-disabled', String(!hasLog)); }
-  if (!hasLog && S.yMode === 'lmean') setSeg($('#yseg'), (S.yMode = 'judg'));
+  sigButtons($('#yseg'));
+  if (S.yMode !== 'judg' && !sigOn()) setSeg($('#yseg'), (S.yMode = 'judg'));
   const jobs = S.res.info.data.job_ids || [];
   $('#topnote').textContent = `${jobs.length ? `JOB ID : ${jobs[0]}${jobs.length > 1 ? ` 외 ${jobs.length - 1}개` : ''} · ` : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
   renderConcl();
@@ -425,7 +422,7 @@ function renderConcl() {
     return;
   }
   const r = R[0];
-  const vmu = S.res.funnel.bounds.mean.mid;
+  const vmu = (S.res.funnel.bounds.yz || S.res.funnel.bounds.mean || {}).mid;   // 전체 y_value 평균 (예전 기록은 mean 축에 있음)
   const cert = r.certainty == null ? '–' : r.certainty.toFixed(2);
   const stat = hasBad ? `웨이퍼 <b>${fmt.int(r.n)}장</b> 중 bad <b class="badtxt">${fmt.pct(r.bad)}</b> (예상 ${fmt.pct(r.exp_bad)}) → 예상보다 <b>${fmt.int(r.excess)}장</b> 더 bad`
     : `웨이퍼 <b>${fmt.int(r.n)}장</b>의 y_value 평균 <b>${fmt.num(r.vmean)}</b> (전체 ${fmt.num(vmu)})`;
@@ -667,9 +664,22 @@ function renderSummary() {
 }
 
 // ── Funnel ─────────────────────────────────────────────────────────────
-const Y_TITLE = { judg: '종합 점수 (위쪽이 나쁨)', mean: 'y_value 평균', bad: 'bad 비율', lmean: 'y_value 기하평균 (로그 눈금)' };
-const BOUND_NOTE = { judg: '경계선 (판정 기준)', mean: '경계선 (Value만 볼 때 · Order 1개 기준)', bad: '경계선 (bad만 볼 때 · Order 1개 기준)',
-  lmean: '경계선 (Value만 볼 때 · 로그 · Order 1개 기준)' };
+const yTitle = (m) => ({ judg: '종합 점수 (위쪽이 나쁨)', yz: `y_value (보정 · ${S.res.info.higher_is_worse === false ? '아래쪽' : '위쪽'}이 나쁨)`,
+  bz: 'bad 비율 (보정)' })[m];
+const BOUND_NOTE = { judg: '경계선 (판정 기준)', yz: '경계선 (y_value 하나로만 판정할 때)', bz: '경계선 (bad 하나로만 판정할 때)' };
+
+// 보정 축(y_value · bad 비율): good_bad가 없으면 종합이 곧 y_value만 본 것이라 숨기고, 예전 코드로 계산한 기록이면 흐리게 (누르면 이유)
+const sigOn = () => !!(S.res && S.res.info.has_bad && S.res.funnel.bounds.yz);
+function sigButtons(seg) {
+  for (const b of $$('button[data-v=yz], button[data-v=bz]', seg)) {
+    b.hidden = !S.res.info.has_bad;
+    b.classList.toggle('off', !sigOn());
+    b.setAttribute('aria-disabled', String(!sigOn()));
+  }
+}
+// 신호 하나만 볼 때 기준선 밖인 점(판정은 안 됨)은 그 신호 축에서만 그린다
+const sigOut = (k, m) => (m === 'yz' ? k.oy : m === 'bz' ? k.ob : 0);
+const drawn = (k, m) => k[m] != null && (k.side !== 'sig' || !!sigOut(k, m));
 
 // 세로축 범위: 가운데 선을 기준으로 위아래를 같은 폭으로 잡아, 경계선 양 끝(웨이퍼가 적은 쪽에서 벌어진 끝)과 점이 모두 보이게
 function symRange(b, ns, vals) {
@@ -722,18 +732,13 @@ function renderFunnel() {
   const ns = bd.n;
   const L = 60, R = W - 14, T = 12, B = H - 48;
   const xs = scaleLog(ns[0], ns[ns.length - 1], L, R);
-  const logY = m === 'lmean';                           // y_value 로그: 범위 · 점 · 선을 log10으로 잡고 눈금은 원래 단위로
   const b = bd[m];
-  const lsh = logY && b && b.shift ? b.shift : 0;       // y_value에 0 이하가 있으면 가장 작은 값보다 조금 아래를 기준으로 로그
-  const tv = logY ? (v) => (v != null && v > lsh ? Math.log10(v - lsh) : null) : (v) => v;
-  const bt = b && logY ? { lo: b.lo.map(tv), hi: b.hi.map(tv), mid: tv(b.mid) } : b;
-  const gv = (fn.gray[m] || []).map(tv).filter((v) => v != null).sort((a, c) => a - c);
+  const gv = (fn.gray[m] || []).filter((v) => v != null).sort((a, c) => a - c);
   const vals = gv.length ? [quantile(gv, 0.002), quantile(gv, 0.998)] : [];
-  for (const k of fn.marks) if (k[m] != null) vals.push(tv(k[m]));
-  let [lo, hi] = S.fView === 'pts' ? fitRange(bt, ns, vals) : symRange(bt, ns, vals);
-  if (m === 'bad') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
-  const yl = scaleLin(lo, hi, B, T);
-  const ys = logY ? (v) => yl(tv(v)) : yl;               // 원래 단위 값 → 화면 높이
+  for (const k of fn.marks) if (drawn(k, m)) vals.push(k[m]);
+  let [lo, hi] = S.fView === 'pts' ? fitRange(b, ns, vals) : symRange(b, ns, vals);
+  if (m === 'bz') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
+  const ys = scaleLin(lo, hi, B, T);
   S.fn = { L, R, T, B, xs, ys, lo, hi };
   // 바탕(캔버스): 경계선 사이 칠 → 기준선 안 점
   const g = cv.getContext('2d');
@@ -757,9 +762,9 @@ function renderFunnel() {
   const gn = fn.gray.n;
   const gy = fn.gray[m] || [];
   for (let i = 0; i < gn.length; i++) {
-    const v = tv(gy[i]);
+    const v = gy[i];
     if (v == null || v < lo || v > hi) continue;
-    g.fillRect(xs(gn[i]) - 1, yl(v) - 1, 2, 2);
+    g.fillRect(xs(gn[i]) - 1, ys(v) - 1, 2, 2);
   }
   g.restore();
   // 위(SVG): 경계선 · 축 · 경계 밖 점 · 드래그 상자
@@ -770,17 +775,8 @@ function renderFunnel() {
     if (b.mid != null) s += `<line x1="${L}" x2="${R}" y1="${ys(b.mid)}" y2="${ys(b.mid)}" stroke="${C.line2}" stroke-dasharray="4 3"/>`;
   }
   s += '</g>';
-  const logTk = () => {                                  // 원래 단위의 보기 좋은 값(1 · 2 · 5 · 10 …)을 로그 자리에 놓는다
-    const vlo = 10 ** lo + lsh;
-    const vhi = 10 ** hi + lsh;
-    const t0 = Math.max(vlo, vhi / 1e4);
-    const tk = t0 > 0 && vhi > t0 ? logTicks(t0, vhi) : [];
-    if (lsh < 0 && vlo <= 0 && vhi >= 0) tk.unshift(0);
-    return tk.filter((t) => t > lsh).map((v) => ({ v, l: fmt.tick(v) }));
-  };
-  const yt = m === 'judg' ? [] : logY ? logTk()
-    : linTicks(lo, hi, 5).map((v) => ({ v, l: m === 'bad' ? Math.round(v * 100) + '%' : fmt.tick(v) }));
-  s += axes({ L, R, T, B, xs, ys, xt: logTicks(ns[0], ns[ns.length - 1]).map((v) => ({ v, l: fmt.int(v) })), yt, xl: '웨이퍼 수 N (조합을 지난 웨이퍼)', yl: Y_TITLE[m], yo: 44 });
+  const yt = m === 'judg' ? [] : linTicks(lo, hi, 5).map((v) => ({ v, l: m === 'bz' ? Math.round(v * 100) + '%' : fmt.tick(v) }));
+  s += axes({ L, R, T, B, xs, ys, xt: logTicks(ns[0], ns[ns.length - 1]).map((v) => ({ v, l: fmt.int(v) })), yt, xl: '웨이퍼 수 N (조합을 지난 웨이퍼)', yl: yTitle(m), yo: 44 });
   s += '<g id="fmarks"></g><g id="fbrush"></g>';
   sv.innerHTML = s;
   drawMarks();
@@ -788,6 +784,7 @@ function renderFunnel() {
     `<span class="item"><span class="dot" style="background:${C.muted}"></span>기준선 안 ${fmt.int(fn.gray_total)}개${gn.length < fn.gray_total ? ` (${fmt.int(gn.length)}개만 그림)` : ''}</span>`,
     ...followLegend(fn),
     `<span class="item"><span class="dot" style="background:${C.good}"></span>good path ${fmt.int(fn.marks.filter((k) => k.side === 'good').length)}개</span>`,
+    sigLegend(fn, m),
     `<span class="item">— ${BOUND_NOTE[m]}</span>`,
     `<span class="item"><span class="dot" style="border:2px solid ${C.ring};width:10px;height:10px"></span>고른 순위</span>`,
   ].join('');
@@ -808,6 +805,28 @@ function followLegend(fn) {
       + `<span class="seg small" id="ffollow" role="group" aria-label="따라 올라온 점 보기">${[0, 2, 4].map((j) => `<button type="button" data-v="${seg[j]}" class="${S.follow === seg[j] ? 'on' : ''}">${seg[j + 1]}</button>`).join('')}</span></span>` : ''];
 }
 
+// 보정 축 범례: 이 신호 하나만 보면 기준선 밖이지만 판정(종합)은 안 된 점
+function sigLegend(fn, m) {
+  const n = fn.marks.filter((k) => k.side === 'sig' && sigOut(k, m)).length;
+  return n ? `<span class="item"><span class="dot sig"></span>${m === 'yz' ? 'y_value' : 'bad'}만 보면 밖 · 판정 안 됨 ${fmt.int(n)}개${helpIcon('sig')}</span>` : '';
+}
+
+// 판정 근거: 신호 하나씩 볼 때 기준선 밖인지 (oy · ob = 1 나쁜 쪽 밖 · −1 좋은 쪽 밖 · 0 안). good_bad가 없거나 예전 기록이면 적지 않음
+function basisLine(side, oy, ob) {
+  if (!S.res.info.has_bad || oy == null || ob == null) return '';
+  if (side === 'bad' || side === 'good') {
+    const d = side === 'good' ? -1 : 1;
+    const y = oy === d;
+    const b = ob === d;
+    return '판정 근거: ' + (y && b ? '둘 다 (y_value만 봐도, bad만 봐도 기준선 밖)' : y ? 'y_value만 (bad만 보면 기준선 안)'
+      : b ? 'bad만 (y_value만 보면 기준선 안)' : '두 신호를 합쳐서 넘음 (하나씩 보면 둘 다 기준선 안)');
+  }
+  const part = [];
+  if (oy) part.push(`y_value만 보면 기준선 밖(${oy > 0 ? '나쁜 쪽' : '좋은 쪽'})`);
+  if (ob) part.push(`bad만 보면 기준선 밖(${ob > 0 ? '나쁜 쪽' : '좋은 쪽'})`);
+  return part.length ? part.join(' · ') + '<br>종합은 기준선 안이라 판정 안 됨 (순위에 오르지 않음)' : '';
+}
+
 function drawMarks() {
   const f = S.fn;
   const host = $('#fmarks');
@@ -825,7 +844,7 @@ function drawMarks() {
   let s = '';
   for (const i of order) {
     const k = marks[i];
-    if (k[m] == null) continue;
+    if (!drawn(k, m)) continue;
     const fol = isFollow(k);
     if (fol && S.follow === 'hide') continue;
     const x = f.xs(k.n).toFixed(1);
@@ -834,7 +853,8 @@ function drawMarks() {
     const cur_ = `data-i="${i}" style="cursor:${k.rank || k.target ? 'pointer' : 'default'}"`;
     s += fol && S.follow === 'fade'
       ? `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${C.card}" stroke="${C.bad}" stroke-width="1.3" opacity="${(op * 0.6).toFixed(2)}" ${cur_}/>`
-      : `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${k.side === 'bad' ? C.bad : C.good}" opacity="${op}" ${cur_}/>`;
+      : k.side === 'sig' ? `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${C.muted}" stroke="${C.ink2}" stroke-width="1.2" opacity="${op}" ${cur_}/>`
+        : `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${k.side === 'bad' ? C.bad : C.good}" opacity="${op}" ${cur_}/>`;
     if (k.rank && k.rank <= 10) s += `<text x="${(+x + 8).toFixed(1)}" y="${(+y - 7).toFixed(1)}" fill="${C.bad}" font-size="11" font-weight="600" opacity="${op}" pointer-events="none">${k.rank}</text>`;
     const here = isCur(k);
     if (here && (S.picks.length > 1 || cur.kind !== 'rank')) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="${C.ring}" stroke-opacity="0.35" stroke-width="5" pointer-events="none"/>`;   // 아래 상세에 보이는 대상
@@ -863,10 +883,11 @@ function markTip(e) {
       : isFollow(k) ? (k.status === 'inherited' ? '따라 올라온 점 · 상속 (Order를 하나 뺀 경로보다 뚜렷하게 나쁘지 않음)' : '따라 올라온 점 · 하위 기인 (더 좁은 경로가 이 차이를 설명함)')
         + (k.cause ? `<br>기대는 경로: ${esc(k.cause)}` : '') + (k.target ? ` · ${k.target}위 대상 묶음` : '')
       : k.target ? `${k.target}위 대상에 포함 (같이 올라온 조합)`
-        : k.side === 'bad' ? '기준선 밖 (혐의 대상과 묶이지 않음)' : 'good path (기준선보다 뚜렷하게 좋음)';
-  showTip(`<b>${esc(k.label)}</b><br>${who}<br>웨이퍼 ${fmt.int(k.n)}장 · Order ${k.k}개 · Certainty ${k.certainty == null ? '–' : k.certainty.toFixed(2)}`
-    + (k.mean != null ? `<br>y_value 평균 ${fmt.num(k.mean)}` : '') + (k.lmean != null && S.yMode === 'lmean' ? ` · 기하평균 ${fmt.num(k.lmean)}` : '')
-    + (k.bad != null ? ` · bad ${fmt.pct(k.bad)}` : ''), e.clientX, e.clientY);
+        : k.side === 'bad' ? '기준선 밖 (혐의 대상과 묶이지 않음)' : k.side === 'sig' ? '' : 'good path (기준선보다 뚜렷하게 좋음)';
+  const lines = [`<b>${esc(k.label)}</b>`, who, basisLine(k.side, k.oy, k.ob),
+    `웨이퍼 ${fmt.int(k.n)}장 · Order ${k.k}개 · Certainty ${k.certainty == null ? '–' : k.certainty.toFixed(2)}`,
+    k.mean != null ? `y_value 평균 ${fmt.num(k.mean)}${k.bad != null ? ` · bad ${fmt.pct(k.bad)}` : ''}` : ''];
+  showTip(lines.filter(Boolean).join('<br>'), e.clientX, e.clientY);
 }
 
 // 끌어서 고르기: 상자 안의 순위가 매겨진 점(그 순위에 포함된 점 포함)을 모두 고른다. Ctrl · ⌘ · Shift를 누르고 끌면 더한다
@@ -920,7 +941,7 @@ function brushSelect(b) {
   const idx = new Set();
   for (const k of S.res.funnel.marks) {
     const r = k.rank || k.target;
-    if (!r || k[m] == null || (S.follow === 'hide' && isFollow(k))) continue;
+    if (!r || !drawn(k, m) || (S.follow === 'hide' && isFollow(k))) continue;
     const x = f.xs(k.n);
     const y = f.ys(k[m]);
     if (x >= xa && x <= xb && y >= ya && y <= yb) idx.add(r - 1);
@@ -1314,10 +1335,8 @@ function makePanel() {
     store.set('uc.ptSize2', S.ptSize);
     if (p.det) renderScatter(p);
   });
-  if (!S.res.info.has_bad) {
-    $('[data-r=pseg] button[data-v=bad]', el).disabled = true;
-    $('[data-r=pseg] button[data-v=ex]', el).textContent = 'N × ΔValue';
-  }
+  sigButtons($('[data-r=pseg]', el));
+  if (!S.res.info.has_bad) $('[data-r=pseg] button[data-v=ex]', el).textContent = 'N × ΔValue';
   bindAxisTips($('[data-r=pseg]', el));
   el.addEventListener('click', (e) => panelClick(p, e));
   const peers = $('[data-r=peers]', el);
@@ -1389,6 +1408,7 @@ function panelClick(p, e) {
   const seg = e.target.closest('[data-r=cseg] button, [data-r=pseg] button, [data-r=sseg] button, [data-r=xseg] button');
   if (seg) {
     if (seg.disabled) return;
+    if (seg.classList.contains('off')) { toast(esc(SIG_OFF), { timeout: 7000 }); return; }
     const r = seg.parentElement.dataset.r;
     setSeg(seg.parentElement, seg.dataset.v);
     if (r === 'cseg') { p.cMode = seg.dataset.v; renderScatter(p); } else if (r === 'pseg') { p.pMode = seg.dataset.v; renderPeers(p); } else if (r === 'sseg') { p.pScope = seg.dataset.v; renderPeers(p); } else { p.xMode = seg.dataset.v; renderCompare(p); }
@@ -1643,7 +1663,7 @@ function renderScatter(p) {
 }
 
 // ── 경로 비교: STEP 전체(이 STEP에서 계산한 모든 조합 · 위 funnel과 같은 눈금) · 같은 Order(고른 Order들을 다른 Unit으로 지난 조합) ──
-const P_AXIS = { judg: '종합 점수', mean: 'y_value 평균', bad: 'bad 비율' };
+const P_AXIS = { judg: '종합 점수', yz: 'y_value (보정)', bz: 'bad 비율 (보정)' };
 const exName = () => (S.res && S.res.info.has_bad ? '초과 bad' : 'N × ΔValue');   // 순위 기준
 
 // STEP 전체 조합은 STEP마다 한 번 받아 둔다
@@ -1674,7 +1694,7 @@ function renderPeers(p) {
   const m = p.pMode;
   const stepView = p.pScope === 'step';
   const sel = D.selection;
-  const sv = { judg: sel.judg, mean: sel.vmean, bad: sel.bad, ex: sel.ex }[m];      // 지금 선택의 값 (따로 크게 그림)
+  const sv = { judg: sel.judg, yz: sel.yz, bz: sel.bz, ex: sel.ex }[m];      // 지금 선택의 값 (따로 크게 그림)
   const pts = [];
   let bnd = D.peer_bounds;
   let info = null;
@@ -1690,15 +1710,17 @@ function renderPeers(p) {
     bnd = info.bounds;
     const key = selKey(p.sel);
     const vals = info[m];
+    const out = m === 'yz' ? info.oy : m === 'bz' ? info.ob : null;   // 이 신호 하나만 보면 기준선 밖
     for (let i = 0; i < info.n.length; i++) {
       if (!vals || vals[i] == null || flatKey(info.items[i]) === key) continue;
       if (S.follow === 'hide' && (info.flag[i] === 3 || info.flag[i] === 4)) continue;   // 따라 올라온 점 숨기기
-      pts.push({ n: info.n[i], v: vals[i], f: info.flag[i], s: i });
+      pts.push({ n: info.n[i], v: vals[i], f: info.flag[i], s: i, o: out ? out[i] : 0 });
     }
   } else {
     for (const q of D.peers) if (q.g !== D.sel_group && q[m] != null) pts.push({ n: q.n, v: q[m], f: 0, g: q.g });
   }
   renderPeerCap(p, info, null);
+  if ((m === 'yz' || m === 'bz') && sv == null && !pts.length) { el.innerHTML = `<text x="20" y="40" fill="${C.ink2}">이 실행 기록에는 보정 값이 없습니다 · Run을 다시 누르세요</text>`; return; }
   if (!pts.length && sv == null) { el.innerHTML = `<text x="20" y="40" fill="${C.ink2}">비교할 경로가 없습니다</text>`; return; }
   const L = 56, R = W - 12, T = 10, B = H - 46;
   const ns = pts.map((q) => q.n).concat(sv != null ? [sel.n] : []);
@@ -1722,7 +1744,7 @@ function renderPeers(p) {
     xt = linTicks(0, nmax, 5).map((v) => ({ v, l: fmt.int(v) }));
   }
   let [lo, hi] = symRange(rb, rb ? rb.lo.map((_, i) => i) : [], pts.map((q) => q.v).concat(sv != null ? [sv] : []));
-  if (m === 'bad') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
+  if (m === 'bz') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
   const ys = scaleLin(lo, hi, B, T);
   let s = `<defs><clipPath id="pclip"><rect x="${L}" y="${T}" width="${R - L}" height="${B - T}"/></clipPath></defs><g clip-path="url(#pclip)">`;
   if (bd) {
@@ -1730,18 +1752,20 @@ function renderPeers(p) {
     if (bd.mid != null) s += `<line x1="${L}" x2="${R}" y1="${ys(bd.mid)}" y2="${ys(bd.mid)}" stroke="${C.line2}" stroke-dasharray="4 3"/>`;
   }
   s += '</g>';
-  const tick = (v) => (m === 'bad' ? Math.round(v * 100) + '%' : m === 'ex' && D.has_bad && v ? fmt.signed(v) : fmt.tick(v));
+  const tick = (v) => (m === 'bz' ? Math.round(v * 100) + '%' : m === 'ex' && D.has_bad && v ? fmt.signed(v) : fmt.tick(v));
   const yt = m === 'judg' ? [] : linTicks(lo, hi, 4).map((v) => ({ v, l: tick(v) }));
   s += axes({ L, R, T, B, xs, ys, xt, yt, xl: '웨이퍼 수', yl: m === 'ex' ? (D.has_bad ? '초과 bad (장)' : 'N × ΔValue') : P_AXIS[m], yo: 42 });
-  // 점: 기준선 안(회색) → 따라 올라온 점(상속 3 · 하위 기인 4: 속 빈 원) → 원인 후보(1)와 좋은 쪽(2) → 지금 선택. 크기는 모두 같다
+  // 점: 기준선 안(회색 · 이 신호만 보면 밖이면 테두리) → 따라 올라온 점(상속 3 · 하위 기인 4: 속 빈 원) → 원인 후보(1)와 좋은 쪽(2) → 지금 선택.
+  // 크기는 모두 같다
   const fol = (f) => f === 3 || f === 4;
-  const tierP = (f) => (!f ? 0 : fol(f) ? 1 : 2);
-  pts.sort((a, b) => tierP(a.f) - tierP(b.f));
+  const tierP = (q) => (!q.f ? (q.o ? 1 : 0) : fol(q.f) ? 2 : 3);
+  pts.sort((a, b) => tierP(a) - tierP(b));
   const R0 = 4;
   for (const q of pts) {
     const at = `cx="${xs(q.n).toFixed(1)}" cy="${ys(q.v).toFixed(1)}" r="${R0}" ${q.s != null ? `data-s="${q.s}"` : `data-g="${q.g}"`}`;
     if (!stepView) s += `<circle ${at} fill="${C.muted}" opacity="0.85"/>`;
     else if (fol(q.f) && S.follow === 'fade') s += `<circle ${at} fill="${C.card}" stroke="${C.bad}" stroke-width="1.2" opacity="0.6"/>`;
+    else if (!q.f && q.o) s += `<circle ${at} fill="${C.muted}" stroke="${C.ink2}" stroke-width="1.2"/>`;
     else s += `<circle ${at} fill="${q.f === 2 ? C.good : q.f ? C.bad : C.muted}" opacity="${q.f ? 0.9 : 0.75}"/>`;
   }
   if (sv != null) {                                 // 지금 선택: 같은 크기의 빨간 점 + 고리
@@ -1763,8 +1787,11 @@ function renderPeerCap(p, info, err) {
     if (err) { el.innerHTML = `<span class="warntxt">${esc(err)}</span>`; return; }
     const r = sel.step_rank;
     const nf = info ? info.flag.filter((f) => f === 3 || f === 4).length : 0;
+    const o = info && (p.pMode === 'yz' ? info.oy : p.pMode === 'bz' ? info.ob : null);
+    const ns = o ? o.filter((v, i) => v && !info.flag[i]).length : 0;   // 이 신호만 보면 밖 · 판정 안 됨
     el.textContent = r ? `${who}: 이 STEP 조합 ${fmt.int(r.total)}개 중 Certainty ${rk(r.cert)} · ${exName()} ${rk(r.ex)}`
       + (nf ? (S.follow === 'hide' ? ` · 따라 올라온 점 ${nf}개 숨김` : S.follow === 'fade' ? ' · 속 빈 빨간 점 = 따라 올라온 점' : '') : '')
+      + (ns ? ` · 테두리 회색 점 = ${p.pMode === 'yz' ? 'y_value' : 'bad'}만 보면 밖(판정 안 됨) ${ns}개` : '')
       + (info && info.shown < info.total ? ` · 기준선 안 조합은 ${fmt.int(info.shown)}개만 그림` : '') : '';
     return;
   }
@@ -1782,20 +1809,23 @@ function peerTip(p, e) {
   const body = (n, bad, mean, ex, cert) => `웨이퍼 ${fmt.int(n)}장${bad != null ? ' · bad ' + fmt.pct(bad) : ''} · y_value 평균 ${fmt.num(mean)}`
     + `<br>${exName()} ${ex == null ? '–' : D.has_bad ? fmt.signed(ex, 1) + '장' : fmt.num(ex)} · Certainty ${cert == null ? '–' : cert.toFixed(2)}`;
   let h;
+  const side = (cert, f) => (f === 2 || (f == null && cert != null && cert < -1) ? 'good' : f || (f == null && cert != null && cert > 1) ? 'bad' : 'sig');
+  const why = (cert, f, oy, ob) => { const t = basisLine(side(cert, f), oy, ob); return t ? '<br>' + t : ''; };
   if (c.dataset.cur) {
     const s = D.selection;
-    h = `<b>${esc(s.label)}</b> (${sameSel(p.sel, p.spec.items) ? '지금 경로' : '지금 선택'})<br>${body(s.n, s.bad, s.vmean, s.ex, s.certainty)}`;
+    h = `<b>${esc(s.label)}</b> (${sameSel(p.sel, p.spec.items) ? '지금 경로' : '지금 선택'})<br>${body(s.n, s.bad, s.vmean, s.ex, s.certainty)}${why(s.certainty, null, s.oy, s.ob)}`;
   } else if (c.dataset.s != null) {
     const d = stepData(D.step).data;
     if (!d) { hideTip(); return; }
     const i = +c.dataset.s;
     const f = d.flag[i];
     const tag = { 1: ' · 원인 후보', 2: ' · good path', 3: ' · 따라 올라온 점(상속)', 4: ' · 따라 올라온 점(하위 기인)' }[f] || '';
-    h = `<b>${esc(flatLabel(D, d.items[i]))}</b>${tag}<br>${body(d.n[i], d.bad ? d.bad[i] : null, d.mean[i], d.ex[i], d.cert[i])}`;
+    h = `<b>${esc(flatLabel(D, d.items[i]))}</b>${tag}<br>${body(d.n[i], d.bad ? d.bad[i] : null, d.mean[i], d.ex[i], d.cert[i])}`
+      + why(d.cert[i], f, d.oy ? d.oy[i] : null, d.ob ? d.ob[i] : null);
   } else {
     const g = +c.dataset.g;
     const q = D.peers.find((x) => x.g === g);
-    h = `<b>${esc(D.groups[g].label)}</b><br>${body(q.n, q.bad, q.mean, q.ex, q.certainty)}`;
+    h = `<b>${esc(D.groups[g].label)}</b><br>${body(q.n, q.bad, q.mean, q.ex, q.certainty)}${why(q.certainty, null, q.oy, q.ob)}`;
   }
   showTip(h, e.clientX, e.clientY);
 }
@@ -2108,15 +2138,15 @@ function bindHome() {
 }
 
 // ── 이벤트 ─────────────────────────────────────────────────────────────
-// y_value 로그를 쓸 수 없는 기록 (이번 버전 전 코드로 계산했거나 서버가 아직 예전 코드)
-const LOG_OFF = '이 실행 기록에는 y_value 로그 값이 없습니다. 이번 버전 전 코드로 계산했거나, 서버가 아직 예전 코드로 돌고 있습니다. 서버를 새 코드로 다시 켠 뒤 Run을 다시 누르세요.';
+// 보정 축(y_value · bad 비율)을 쓸 수 없는 기록 (이번 버전 전 코드로 계산했거나 서버가 아직 예전 코드)
+const SIG_OFF = '이 실행 기록에는 보정한 y_value · bad 비율 값이 없습니다. 이번 버전 전 코드로 계산했거나, 서버가 아직 예전 코드로 돌고 있습니다. 서버를 새 코드로 다시 켠 뒤 Run을 다시 누르세요.';
 
 function bindAxisTips(el) {
   for (const b of $$('button', el)) {
     b.addEventListener('mouseenter', () => {
       const k = b.dataset.v;
       const r = b.getBoundingClientRect();
-      if (b.classList.contains('off')) { showTip(`<div class="help-tip">${esc(LOG_OFF)}</div>`, r.left, r.bottom - 8); return; }
+      if (b.classList.contains('off')) { showTip(`<div class="help-tip">${esc(SIG_OFF)}</div>`, r.left, r.bottom - 8); return; }
       showTip(`<b>${AXIS_TIP[k][0]}</b><svg viewBox="0 0 230 84" width="230" height="84">${axisTipSvg(k)}</svg><div class="muted">${AXIS_TIP[k][1]}</div>`, r.left, r.bottom - 8);
     });
     b.addEventListener('mouseleave', hideTip);
@@ -2202,7 +2232,7 @@ function bindFunnel() {
   $('#yseg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || b.disabled || !S.res) return;
-    if (b.classList.contains('off')) { toast(esc(LOG_OFF), { timeout: 7000 }); return; }
+    if (b.classList.contains('off')) { toast(esc(SIG_OFF), { timeout: 7000 }); return; }
     S.yMode = b.dataset.v;
     setSeg($('#yseg'), S.yMode);
     renderFunnel();
