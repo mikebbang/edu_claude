@@ -30,6 +30,7 @@ def analyze(data, min_n=20, max_depth=3, full_depth=2, spread_adjust=True, progr
     Y = sig['y']
     Y2 = Y * Y
     V = np.asarray(data['value'], dtype=float) if data.get('value') is not None else None   # 원래 y_value (조합마다 평균을 웹 funnel에 씀)
+    LV = np.log(V) if V is not None and bool((V > 0).all()) else None   # 로그 y_value (조합마다 기하평균을 웹 funnel에 씀 · 값이 모두 0보다 클 때만)
     mu, sd = base['y']
     bad01 = np.nan_to_num(data['bad']) if 'b' in sig else None
     p0 = float(bad01.mean()) if 'b' in sig else 0.0
@@ -46,6 +47,8 @@ def analyze(data, min_n=20, max_depth=3, full_depth=2, spread_adjust=True, progr
         out = {'ss': add(Y2)} | {f'sum_{k_}': add(v) for k_, v in sig.items()}
         if V is not None:
             out['sum_v'] = add(V)
+        if LV is not None:
+            out['sum_lv'] = add(LV)
         if 'b' in sig:
             out['x_bad'] = add(bad01)                 # 원래 bad 장수 (0/1): 이항분포 꼬리 보정 · 초과 bad용
             out['x_exp'] = add(bad_exp)               # 기대 bad 장수: 웨이퍼마다 기대 bad 비율(part별로 맞췄으면 자기 part의 비율)의 합
@@ -231,6 +234,7 @@ def analyze(data, min_n=20, max_depth=3, full_depth=2, spread_adjust=True, progr
         zb_l = zb.tolist() if zb is not None else nan_l
         xb_l, xe_l = (x_bad.tolist(), x_exp.tolist()) if x_bad is not None else (nan_l, nan_l)
         sv_l = col('sum_v').tolist() if V is not None else nan_l
+        slv_l = col('sum_lv').tolist() if LV is not None else nan_l
         j = 0
         for s, qs, dims, keys, _, _, comp in cand:
             U = np.empty((len(keys), len(dims)), dtype=np.int64)
@@ -245,7 +249,7 @@ def analyze(data, min_n=20, max_depth=3, full_depth=2, spread_adjust=True, progr
                 c = {'id': len(combos), 'key': prefix + '|'.join(f'{q}:{u}' for q, u in items), 'step': s, 'k': k, 'items': items,
                      'n': int(n_), 'sum': sm_l[j], 'ss': ss_l[j], 'mean': sm_l[j] / n_,
                      'z': z_l[j], 'z_y': zy_l[j], 'z_b': zb_l[j],
-                     'bad_rate': xb_l[j] / n_, 'x_bad': xb_l[j], 'x_exp': xe_l[j], 'vmean': sv_l[j] / n_}
+                     'bad_rate': xb_l[j] / n_, 'x_bad': xb_l[j], 'x_exp': xe_l[j], 'vmean': sv_l[j] / n_, 'lvmean': slv_l[j] / n_}
                 combos.append(c)
                 j += 1
             cur[(s, qs)][2][comp[z[j0:j] > Z95]] = True

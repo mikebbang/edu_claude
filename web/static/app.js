@@ -358,6 +358,9 @@ async function loadResult(id, token, note = '') {
   const hasBad = S.res.info.has_bad;
   for (const b of $$('#yseg button[data-v=bad]')) b.disabled = !hasBad;
   if (!hasBad && S.yMode === 'bad') setSeg($('#yseg'), (S.yMode = 'judg'));
+  const hasLog = !!S.res.funnel.bounds.lmean;           // y_value 로그: 값이 모두 0보다 크고 이번 코드로 계산한 기록만
+  for (const b of $$('#yseg button[data-v=lmean]')) b.disabled = !hasLog;
+  if (!hasLog && S.yMode === 'lmean') setSeg($('#yseg'), (S.yMode = 'judg'));
   const jobs = S.res.info.data.job_ids || [];
   $('#topnote').textContent = `${jobs.length ? `JOB ID : ${jobs[0]}${jobs.length > 1 ? ` 외 ${jobs.length - 1}개` : ''} · ` : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
   renderConcl();
@@ -661,8 +664,9 @@ function renderSummary() {
 }
 
 // ── Funnel ─────────────────────────────────────────────────────────────
-const Y_TITLE = { judg: '종합 점수 (위쪽이 나쁨)', mean: 'y_value 평균', bad: 'bad 비율' };
-const BOUND_NOTE = { judg: '경계선 (판정 기준)', mean: '경계선 (Value만 볼 때 · Order 1개 기준)', bad: '경계선 (bad만 볼 때 · Order 1개 기준)' };
+const Y_TITLE = { judg: '종합 점수 (위쪽이 나쁨)', mean: 'y_value 평균', bad: 'bad 비율', lmean: 'y_value 기하평균 (로그 눈금)' };
+const BOUND_NOTE = { judg: '경계선 (판정 기준)', mean: '경계선 (Value만 볼 때 · Order 1개 기준)', bad: '경계선 (bad만 볼 때 · Order 1개 기준)',
+  lmean: '경계선 (Value만 볼 때 · 로그 · Order 1개 기준)' };
 
 // 세로축 범위: 가운데 선을 기준으로 위아래를 같은 폭으로 잡아, 경계선 양 끝(웨이퍼가 적은 쪽에서 벌어진 끝)과 점이 모두 보이게
 function symRange(b, ns, vals) {
@@ -715,13 +719,17 @@ function renderFunnel() {
   const ns = bd.n;
   const L = 60, R = W - 14, T = 12, B = H - 48;
   const xs = scaleLog(ns[0], ns[ns.length - 1], L, R);
-  const gv = (fn.gray[m] || []).filter((v) => v != null).sort((a, c) => a - c);
-  const vals = gv.length ? [quantile(gv, 0.002), quantile(gv, 0.998)] : [];
-  for (const k of fn.marks) if (k[m] != null) vals.push(k[m]);
+  const logY = m === 'lmean';                           // y_value 로그: 범위 · 점 · 선을 log10으로 잡고 눈금은 원래 단위로
+  const tv = logY ? (v) => (v != null && v > 0 ? Math.log10(v) : null) : (v) => v;
   const b = bd[m];
-  let [lo, hi] = S.fView === 'pts' ? fitRange(b, ns, vals) : symRange(b, ns, vals);
+  const bt = b && logY ? { lo: b.lo.map(tv), hi: b.hi.map(tv), mid: tv(b.mid) } : b;
+  const gv = (fn.gray[m] || []).map(tv).filter((v) => v != null).sort((a, c) => a - c);
+  const vals = gv.length ? [quantile(gv, 0.002), quantile(gv, 0.998)] : [];
+  for (const k of fn.marks) if (k[m] != null) vals.push(tv(k[m]));
+  let [lo, hi] = S.fView === 'pts' ? fitRange(bt, ns, vals) : symRange(bt, ns, vals);
   if (m === 'bad') { lo = Math.max(0, lo); hi = Math.min(1, hi); }
-  const ys = scaleLin(lo, hi, B, T);
+  const yl = scaleLin(lo, hi, B, T);
+  const ys = logY ? (v) => yl(tv(v)) : yl;               // 원래 단위 값 → 화면 높이
   S.fn = { L, R, T, B, xs, ys, lo, hi };
   // 바탕(캔버스): 경계선 사이 칠 → 기준선 안 점
   const g = cv.getContext('2d');
@@ -745,9 +753,9 @@ function renderFunnel() {
   const gn = fn.gray.n;
   const gy = fn.gray[m] || [];
   for (let i = 0; i < gn.length; i++) {
-    const v = gy[i];
+    const v = tv(gy[i]);
     if (v == null || v < lo || v > hi) continue;
-    g.fillRect(xs(gn[i]) - 1, ys(v) - 1, 2, 2);
+    g.fillRect(xs(gn[i]) - 1, yl(v) - 1, 2, 2);
   }
   g.restore();
   // 위(SVG): 경계선 · 축 · 경계 밖 점 · 드래그 상자
@@ -758,7 +766,8 @@ function renderFunnel() {
     if (b.mid != null) s += `<line x1="${L}" x2="${R}" y1="${ys(b.mid)}" y2="${ys(b.mid)}" stroke="${C.line2}" stroke-dasharray="4 3"/>`;
   }
   s += '</g>';
-  const yt = m === 'judg' ? [] : linTicks(lo, hi, 5).map((v) => ({ v, l: m === 'bad' ? Math.round(v * 100) + '%' : fmt.tick(v) }));
+  const yt = m === 'judg' ? [] : logY ? logTicks(10 ** lo, 10 ** hi).map((v) => ({ v, l: fmt.tick(v) }))
+    : linTicks(lo, hi, 5).map((v) => ({ v, l: m === 'bad' ? Math.round(v * 100) + '%' : fmt.tick(v) }));
   s += axes({ L, R, T, B, xs, ys, xt: logTicks(ns[0], ns[ns.length - 1]).map((v) => ({ v, l: fmt.int(v) })), yt, xl: '웨이퍼 수 N (조합을 지난 웨이퍼)', yl: Y_TITLE[m], yo: 44 });
   s += '<g id="fmarks"></g><g id="fbrush"></g>';
   sv.innerHTML = s;
@@ -821,7 +830,8 @@ function markTip(e) {
       : k.target ? `${k.target}위 대상에 포함 (같이 올라온 조합)`
         : k.side === 'bad' ? '기준선 밖 (혐의 대상과 묶이지 않음)' : 'good path (기준선보다 뚜렷하게 좋음)';
   showTip(`<b>${esc(k.label)}</b><br>${who}<br>웨이퍼 ${fmt.int(k.n)}장 · Order ${k.k}개 · Certainty ${k.certainty == null ? '–' : k.certainty.toFixed(2)}`
-    + (k.mean != null ? `<br>y_value 평균 ${fmt.num(k.mean)}` : '') + (k.bad != null ? ` · bad ${fmt.pct(k.bad)}` : ''), e.clientX, e.clientY);
+    + (k.mean != null ? `<br>y_value 평균 ${fmt.num(k.mean)}` : '') + (k.lmean != null && S.yMode === 'lmean' ? ` · 기하평균 ${fmt.num(k.lmean)}` : '')
+    + (k.bad != null ? ` · bad ${fmt.pct(k.bad)}` : ''), e.clientX, e.clientY);
 }
 
 // 끌어서 고르기: 상자 안의 순위가 매겨진 점(그 순위에 포함된 점 포함)을 모두 고른다. Ctrl · ⌘ · Shift를 누르고 끌면 더한다

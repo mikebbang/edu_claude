@@ -33,8 +33,10 @@ def _scales(result):
     d, r = result.data, result.res
     v = np.asarray(d['value'], dtype=float)
     p0 = r['p0']
+    lv = np.log(v) if (v > 0).all() else None              # y_value 로그 (기하평균 축 · 값이 모두 0보다 클 때만)
     return {'mu': r['mu'], 'sd': r['sd'], 'N': r['N'], 'vmu': float(np.mean(v)), 'vsd': float(np.std(v, ddof=1)),
-            'p0': p0, 'bsd': math.sqrt(p0 * (1 - p0)) if p0 is not None else None}
+            'p0': p0, 'bsd': math.sqrt(p0 * (1 - p0)) if p0 is not None else None,
+            'lmu': float(lv.mean()) if lv is not None else None, 'lsd': float(lv.std(ddof=1)) if lv is not None else None}
 
 
 def _half(sc, z, n):
@@ -50,6 +52,9 @@ def _bounds(sc, thr, grid):
            'judg': {'lo': nums(sc['mu'] - _half(sc, thr, grid)), 'hi': nums(sc['mu'] + _half(sc, thr, grid)), 'mid': num(sc['mu'])},
            'mean': {'lo': nums(sc['vmu'] - thr * sc['vsd'] / np.sqrt(grid) * sh), 'hi': nums(sc['vmu'] + thr * sc['vsd'] / np.sqrt(grid) * sh),
                     'mid': num(sc['vmu'])}}
+    if sc['lmu'] is not None:                               # y_value 로그(기하평균): 로그 눈금에서 위아래 같은 폭인 기준선
+        hl = thr * sc['lsd'] / np.sqrt(grid) * sh
+        out['lmean'] = {'lo': nums(np.exp(sc['lmu'] - hl)), 'hi': nums(np.exp(sc['lmu'] + hl)), 'mid': num(math.exp(sc['lmu']))}
     if sc['p0'] is not None:
         hw = thr * sc['bsd'] / np.sqrt(grid) * sh
         lo, hi = np.clip(sc['p0'] - hw, 0, 1), np.clip(sc['p0'] + hw, 0, 1)
@@ -195,6 +200,7 @@ def run_payload(result):
     thr = np.array([c['thr'] for c in combos], dtype=float)
     yj = sc['mu'] + z / thr * _half(sc, zk[1] * s, n)       # 종합: 자기 기준 대비 위치를 Order 1개 기준 띠에 맞춘 높이 (띠 밖 ⇔ 판정 밖)
     ym = np.array([c['vmean'] for c in combos], dtype=float)
+    ylm = np.exp(np.array([c.get('lvmean', math.nan) for c in combos], dtype=float)) if sc['lmu'] is not None else None   # 기하평균
     yb = np.array([c['bad_rate'] for c in combos], dtype=float) if d['B'] is not None else None
     over = np.array([c['over'] for c in combos], dtype=bool)
     good = z < -thr                                         # 경계 밖 · 좋은 쪽 (기준선보다 뚜렷하게 낮음)
@@ -202,7 +208,7 @@ def run_payload(result):
     if len(gray) > GRAY_MAX:
         gray = np.sort(np.random.default_rng(0).choice(gray, GRAY_MAX, replace=False))
     pick = lambda idx: {'n': [int(v) for v in n[idx]], 'judg': nums(yj[idx], 5), 'mean': nums(ym[idx], 5),
-                        'bad': nums(yb[idx], 5) if yb is not None else None}
+                        'bad': nums(yb[idx], 5) if yb is not None else None, 'lmean': nums(ylm[idx], 5) if ylm is not None else None}
     marks = []                                              # 경계 밖 점 (bad · good path)
     steps = d['steps']
     same_as = result.ranked['same_as']
@@ -210,6 +216,7 @@ def run_payload(result):
         c = combos[i]
         st = steps[c['step']]
         marks.append({'side': 'bad' if over[i] else 'good', 'n': c['n'], 'judg': num(yj[i], 5), 'mean': num(ym[i], 5),
+                      'lmean': num(ylm[i], 5) if ylm is not None else None,
                       'bad': num(yb[i], 5) if yb is not None else None, 'rank': rank_of.get(c['key']), 'target': tgt.get(c['key']),
                       'label': f"{st['name']} {path_label(st, c['items'])}", 'k': c['k'], 'certainty': num(c['z'] / c['thr'], 3),
                       'key': c['key'], 'merged': rank_of.get(same_as[c['key']]) if c['key'] in same_as else None})
