@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, fields
 @dataclass(frozen=True)
 class Settings:
     min_n: int = 4                       # 조합에 필요한 최소 웨이퍼 수
-    max_depth: int | None = 5            # 조합에 묶을 최대 Order 수 (None이면 제한 없이 새 조합이 나오지 않을 때까지)
+    max_depth: int | None = 3            # 조합에 묶을 최대 Order 수 (None이면 제한 없이 새 조합이 나오지 않을 때까지)
     part_id: str | None = None           # 한 제품만 볼 때
     line_id: str | None = None           # 한 라인만 볼 때
     step_suffix: str | None = r'_(\d+)$'  # step_seq 끝의 Order 번호 규칙 (None이면 step_seq를 STEP, step_ord를 Order로)
