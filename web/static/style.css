@@ -125,6 +125,8 @@ button.flag.warn { color: var(--warn); background: var(--hover); border-color: v
 .concl-more { margin-top: 4px; font-size: 13px; }
 .concl-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 15px; }
 .concl-tag { display: inline-block; padding: 1px 8px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); font-size: 12px; font-weight: 700; }
+.concl-tag.good { background: color-mix(in srgb, var(--good) 14%, var(--card)); color: var(--good); }   /* 순위 밖 경로: good path */
+.concl-tag.plain { background: var(--hover); color: var(--ink2); }                                     /* 순위 밖 경로: 판정 안 됨 */
 .concl-stat { font-size: 14px; }
 /* 용어 도움말 */
 .help { display: inline-block; margin-left: 3px; color: var(--muted); font-size: 11px; font-weight: 400; cursor: help; }

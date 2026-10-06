@@ -11,14 +11,14 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const CMP_MAX = 200;                 // 비교 띠에 그리는 최대 대상 수
 const RECENT_MAX = 10;               // 연 결과가 없을 때 보여 주는 최근 실행 수
 const S = {
-  view: null, fileId: null, runId: null, res: null, hover: null, yMode: 'judg', sort: { key: 'rank', dir: 1 }, fn: null,
+  view: null, fileId: null, runId: null, res: null, resId: null, hover: null, yMode: 'judg', sort: { key: 'rank', dir: 1 }, fn: null,
   brush: null, brushed: false, hintTimer: null,
   picks: [], focus: null, ptSize: 4.5, files: [],
   cur: null, open: new Set(), panel: null, cmp: null, cmpSeq: 0, cmpPending: null,   // 상세에 보이는 대상 · 묶인 대상을 펼친 순위 · 상세 카드 · 비교 띠 값
   stepCache: new Map(),                               // 경로 비교(STEP 전체)용 조합 · STEP마다 한 번 받음
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
   db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 raw.csv로만)
-  fView: 'all', pendingDel: new Set(), toasts: [], conclText: '',   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
+  fView: 'all', pendingDel: new Set(), toasts: [], conclText: '', pendingSel: null,   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
   home: { items: [], at: -1, mode: null, q: '', db: false },
 };
 
@@ -244,8 +244,70 @@ async function run() {
 }
 
 // ── 화면 전환 ─────────────────────────────────────────────────────────
+// 주소에 담는 보기: 고른 순위(r=1,3) · 상세에 보는 대상(t=r3 순위 · x<key> 묶인 대상 · f<key> 순위 밖 경로) · 칸으로 바꾼 경로(p=0:0,2:1).
+// 1위 하나만 골라 1위를 그대로 보면 #run=<id>만 쓴다. 링크를 받은 사람도 같은 대상 · 경로를 본다
+function parseView(hash) {
+  const q = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  const run = q.get('run');
+  return { run: run && /^[0-9a-f]+$/.test(run) ? run : null, r: q.has('r') ? q.get('r') : null, t: q.get('t'), p: q.get('p') };
+}
+
+function viewHash() {
+  const enc = (v) => encodeURIComponent(v).replace(/%2C/g, ',').replace(/%3A/g, ':');
+  const out = ['run=' + S.runId];
+  if (S.res) {
+    const R = S.res.ranking;
+    const ranks = S.picks.map((i) => R[i].rank);
+    const first = R.length ? R[0].rank : null;
+    if (!(ranks.length === 1 && ranks[0] === first) && !(ranks.length === 0 && !R.length)) out.push('r=' + ranks.join(','));
+    const cur = S.cur;
+    if (cur && !(cur.kind === 'rank' && S.picks.length && cur.i === S.picks[0])) out.push('t=' + enc(cur.id));
+    const p = S.panel;
+    if (cur && p && p.spec && p.spec.id === cur.id && !sameSel(p.sel, p.spec.items)) {
+      out.push('p=' + enc(p.sel.slice().sort((a, b) => a[0] - b[0]).map(([q, u]) => `${q}:${u}`).join(',')));
+    }
+  }
+  return '#' + out.join('&');
+}
+
+// 지금 보기를 주소에 적는다 (뒤로 가기 목록은 늘리지 않음)
+function syncHash() {
+  if (!S.res || !S.runId || S.resId !== S.runId) return;
+  const h = viewHash();
+  if (location.hash !== h) history.replaceState(null, '', h);
+}
+
+// 주소의 보기를 적용한다. 맞지 않는 값(없는 순위 · 다른 실행의 경로)은 버리고 기본(1위)으로
+function applyView(v) {
+  const R = S.res.ranking;
+  let picks;
+  if (v.r != null) picks = v.r.split(',').map((x) => R.findIndex((r) => r.rank === parseInt(x, 10))).filter((i) => i >= 0);
+  else {                                                // r가 없으면: t가 순위 · 묶인 대상이면 그 순위 하나, 아니면 1위
+    const at = !v.t ? -1 : v.t[0] === 'r' ? R.findIndex((r) => 'r' + r.rank === v.t) : v.t[0] === 'x' ? R.findIndex((r, i) => groupOf(i).some((x) => x.id === v.t)) : -1;
+    picks = at >= 0 ? [at] : R.length ? [0] : [];
+  }
+  picks = [...new Set(picks)].sort((a, b) => a - b);
+  let cur = null;
+  if (v.t && v.t[0] === 'r') cur = picks.map(tRank).find((x) => x.id === v.t) || null;
+  else if (v.t && v.t[0] === 'x') cur = picks.flatMap(groupOf).find((x) => x.id === v.t) || null;
+  else if (v.t && v.t[0] === 'f') {
+    const k = S.res.funnel.marks.find((m) => m.key === v.t.slice(1));
+    cur = k ? tFree(k) : null;
+  }
+  if (!cur && picks.length) cur = tRank(picks[0]);
+  const sel = cur && v.p ? v.p.split(',').map((x) => x.split(':').map((n) => parseInt(n, 10))) : null;
+  S.pendingSel = sel && sel.length && sel.every((it) => it.length === 2 && it.every((n) => Number.isInteger(n) && n >= 0)) ? sel : null;
+  S.picks = picks;
+  S.cur = cur;
+  S.focus = cur && cur.i != null ? cur.i : picks.length ? picks[0] : null;
+  if (cur && cur.kind === 'member') S.open.add(cur.i);
+  afterPicks();
+  if (S.focus != null) revealRow(S.focus, cur && cur.kind === 'member' ? cur.key : null);
+}
+
 function route() {
-  const m = /^#run=([0-9a-f]+)$/.exec(location.hash);
+  const hv = parseView(location.hash);
+  const m = hv.run ? [null, hv.run] : null;
   const view = m || location.hash === '#analysis' ? 'app' : 'home';
   const changed = view !== S.view;
   S.view = view;
@@ -260,6 +322,7 @@ function route() {
     return;
   }
   if (m && m[1] !== S.runId) { openRun(m[1], '', false); return; }
+  if (m && S.res && S.resId === m[1] && location.hash !== viewHash()) applyView(hv);   // 같은 실행의 다른 보기 링크를 주소창에 붙여 넣음
   if (!m && S.runId) {                       // #analysis: 고른 실행 없이 설정 · 실행 기록만
     S.watch++;
     S.runId = null;
@@ -279,8 +342,7 @@ function go(hash) {
 async function openRun(id, note = '', push = true) {
   const token = ++S.watch;
   S.runId = id;
-  const h = '#run=' + id;
-  if (location.hash !== h) history[push ? 'pushState' : 'replaceState'](null, '', h);
+  if (parseView(location.hash).run !== id) history[push ? 'pushState' : 'replaceState'](null, '', '#run=' + id);   // 같은 실행이면 주소의 보기(r · t · p)를 남겨 결과를 연 뒤 적용
   if (S.view !== 'app') route();
   const v = S.runs.find((x) => x.id === id);
   if (v) {
@@ -353,6 +415,7 @@ async function loadResult(id, token, note = '') {
   status('');
   if (note) toast(esc(note));
   S.res = res;
+  S.resId = id;                                        // 화면의 결과가 어느 실행 것인지 (다른 실행을 여는 동안 주소를 잘못 고치지 않게)
   S.hover = null;
   S.sort = { key: 'rank', dir: 1 };
   S.picks = [];
@@ -370,10 +433,9 @@ async function loadResult(id, token, note = '') {
   renderMore();
   setMore(false);
   renderFunnel();
-  if (S.res.ranking.length) {
-    S.focus = 0;
-    setPicks([0]);
-  } else {
+  const want = parseView(location.hash);
+  if (S.res.ranking.length || want.t) applyView(want);   // 주소에 보기가 없으면 1위
+  else {
     renderRanking();
     $('#details').hidden = true;
   }
@@ -381,6 +443,7 @@ async function loadResult(id, token, note = '') {
 
 function hideResults() {
   S.res = null;
+  S.resId = null;
   S.picks = [];
   resetDetail();
   $('#results').hidden = true;
@@ -425,6 +488,12 @@ function setMore(open) {
   const b = $('#more-btn');
   b.setAttribute('aria-expanded', String(open));
   b.textContent = `자세히 ${open ? '▴' : '▾'}`;
+}
+
+// 지금 보는 화면(고른 순위 · 상세 대상 · 바꾼 경로)의 링크를 복사한다
+async function copyView() {
+  syncHash();
+  toast(await copyText(location.href) ? '이 화면 링크를 복사했습니다. 받은 사람도 같은 대상 · 경로를 봅니다.' : '복사하지 못했습니다. 주소창의 주소를 복사하세요.', { kind: '' });
 }
 
 // 결론: 1위를 한 문장으로 (복사해 회의 · 메신저에 붙여 쓰도록 같은 내용을 글로도 만들어 둔다)
@@ -877,7 +946,7 @@ function drawMarks() {
     const x = f.xs(k.n).toFixed(1);
     const y = f.ys(k[m]).toFixed(1);
     const op = lit(k) ? 1 : 0.25;
-    const cur_ = `data-i="${i}" style="cursor:${k.rank || k.target ? 'pointer' : 'default'}"`;
+    const cur_ = `data-i="${i}" style="cursor:pointer"`;
     s += fol && S.follow === 'fade'
       ? `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${C.card}" stroke="${C.bad}" stroke-width="1.3" opacity="${(op * 0.6).toFixed(2)}" ${cur_}/>`
       : k.side === 'sig' ? `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${C.muted}" stroke="${C.ink2}" stroke-width="1.2" opacity="${op}" ${cur_}/>`
@@ -913,7 +982,8 @@ function markTip(e) {
         : k.side === 'bad' ? '기준선 밖 (혐의 대상과 묶이지 않음)' : k.side === 'sig' ? '' : 'good path (기준선보다 뚜렷하게 좋음)';
   const lines = [`<b>${esc(k.label)}</b>`, who, basisLine(k.side, k.oy, k.ob),
     `웨이퍼 ${fmt.int(k.n)}장 · Order ${k.k}개 · Certainty ${k.certainty == null ? '–' : k.certainty.toFixed(2)}`,
-    k.mean != null ? `y_value 평균 ${fmt.num(k.mean)}${k.bad != null ? ` · bad ${fmt.pct(k.bad)}` : ''}` : ''];
+    k.mean != null ? `y_value 평균 ${fmt.num(k.mean)}${k.bad != null ? ` · bad ${fmt.pct(k.bad)}` : ''}` : '',
+    k.rank || k.target ? '' : '<span class="muted">누르면 아래 상세에서 봅니다 (순위 밖)</span>'];
   showTip(lines.filter(Boolean).join('<br>'), e.clientX, e.clientY);
 }
 
@@ -985,7 +1055,7 @@ function brushSelect(b) {
 }
 
 function clearPicks() {
-  if (!S.picks.length) return;
+  if (!S.picks.length && !S.cur) return;
   S.picks = [];
   S.focus = null;
   S.cur = null;
@@ -1094,6 +1164,22 @@ function revealRow(i, key = null) {
 //   kind 'rank' 순위 · 'member' 웨이퍼가 같아 그 순위에 묶인 대상 · 'cross' 그 순위의 다른 STEP 탓 의심 대상(순위표에 없는 것)
 const tRank = (i) => { const r = S.res.ranking[i]; return { id: 'r' + r.rank, kind: 'rank', i, key: r.key, step: r.step, items: r.items, t: r }; };
 const tSub = (i, t, kind) => ({ id: 'x' + t.key, kind, i, key: t.key, step: t.step, items: t.items, t });
+// 순위 밖 경로: funnel에서 순위 · 묶음이 없는 점(good path · 판정 안 됨 · 묶이지 않은 기준선 밖 점). 경로는 점의 key(STEP|Order:Unit|…)에서,
+// STEP 이름은 점 이름의 첫 낱말에서 (상세를 불러오면 그 STEP 이름 · 설명으로 바꾼다)
+function tFree(k) {
+  const [s, ...its] = k.key.split('|');
+  const sp = k.label.indexOf(' ');
+  const path = sp > 0 ? k.label.slice(sp + 1) : '';
+  const t = { step_name: sp > 0 ? k.label.slice(0, sp) : k.label, desc: '', path, parts: path.split(' → '), n: k.n, certainty: k.certainty, key: k.key, side: k.side, status: k.status };
+  return { id: 'f' + k.key, kind: 'free', i: null, key: k.key, step: +s, items: its.map((x) => x.split(':').map(Number)), t };
+}
+const FREE_TAG = { good: ['good path', 'good'], sig: ['판정 안 됨', 'plain'], bad: ['기준선 밖 · 순위 없음', ''] };
+
+// 순위 밖 경로를 상세에서 본다. 고른 순위 · 비교 띠는 그대로 둔다
+function openFree(k) {
+  S.cur = tFree(k);
+  afterPicks();
+}
 
 // 순위 하나와 그 순위에 얽힌 대상: [순위, 묶인 대상…, 다른 STEP 탓 의심 대상]
 function groupOf(i) {
@@ -1154,7 +1240,7 @@ function setFocus(t) {
 // ◀ ▶: 하나만 골랐으면 순위를, 여러 개면 비교 띠의 대상을 차례로
 function stepTarget(d) {
   const sp = S.cur;
-  if (!sp || !S.res) return;
+  if (!sp || !S.res || sp.kind === 'free') return;
   if (S.picks.length > 1) {
     const items = stripItems();
     const t = items[items.findIndex((x) => x.id === sp.id) + d];
@@ -1173,6 +1259,7 @@ function afterPicks() {
   drawMarks();
   renderStrip();
   showPanel();
+  syncHash();
 }
 
 // ── 비교 띠: 여러 순위를 골랐을 때 대상마다 한 줄. 회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼, 빨간 점 = 이 경로 ──
@@ -1344,8 +1431,9 @@ function showPanel() {
   const p = S.panel;
   const changed = !p.spec || p.spec.id !== S.cur.id;
   p.spec = S.cur;
-  if (changed) {                                        // 대상이 바뀌면 원래 경로로 다시 연다 (탐색 중이던 선택은 버림)
-    p.sel = p.spec.items.map((x) => x.slice());
+  if (changed) {                                        // 대상이 바뀌면 원래 경로로 다시 연다 (탐색 중이던 선택은 버림. 링크로 열면 링크의 경로)
+    p.sel = (S.pendingSel || p.spec.items).map((x) => x.slice());
+    S.pendingSel = null;
     p.det = null;
     loadPanel(p);
   }
@@ -1414,12 +1502,13 @@ function panelClick(p, e) {
   const a = e.target.closest('[data-a]');
   const act = a ? a.dataset.a : null;
   if (act === 'prev' || act === 'next') { stepTarget(act === 'prev' ? -1 : 1); return; }
-  if (act === 'close') { togglePick(p.spec.i); return; }
+  if (act === 'close') { if (p.spec.kind !== 'free') togglePick(p.spec.i); return; }
+  if (act === 'link') { copyView(); return; }
   if (act === 'wcsv') { if (p.det) waferCsv(p); return; }
   if (act === 'reset') { p.sel = p.spec.items.map((x) => x.slice()); loadPanel(p); return; }
   if (act === 'rel') { p.relOpen = !p.relOpen; renderRelated(p); return; }
   const g = e.target.closest('[data-gid]');                // 묶음 버튼 · 묶인 대상 표의 "보기"
-  if (g) {
+  if (g && p.spec.kind !== 'free') {
     const t = groupOf(p.spec.i).find((x) => x.id === g.dataset.gid);
     if (t && t.id !== p.spec.id) setFocus(t);
     return;
@@ -1467,10 +1556,12 @@ async function loadPanel(p) {
   const rid = S.runId;
   const seq = ++p.seq;
   p.el.classList.add('loading');
+  syncHash();                                          // 칸 · 칩으로 경로를 바꾸면 주소에도
   try {
     const det = await post(`/api/runs/${rid}/detail`, { step: p.spec.step, items: p.sel });
     if (rid !== S.runId || seq !== p.seq || S.panel !== p) return;
     p.det = det;
+    if (p.spec.kind === 'free') { p.spec.t.step_name = det.step_name; p.spec.t.desc = det.desc; }   // 점 이름에서 짐작한 STEP 이름을 실제 이름으로
     renderPanel(p);
   } catch (e) {
     if (seq === p.seq && S.panel === p) $('[data-r=dstat]', p.el).innerHTML = `<span class="errtxt">상세를 불러오지 못했습니다: ${esc(e.message)}</span>`;
@@ -1492,25 +1583,28 @@ function renderPanel(p) {
 function renderHead(p) {
   const sp = p.spec;
   if (!sp) return;
-  const row = S.res.ranking[sp.i];
+  const free = sp.kind === 'free';
+  const row = free ? null : S.res.ranking[sp.i];
   const t = sp.t;
   const multi = S.picks.length > 1;                     // 하나만 골랐으면 ◀ ▶로 순위를, 여러 개면 비교 띠의 대상을 넘긴다
   const items = multi ? stripItems() : [];
   const at = items.findIndex((x) => x.id === sp.id);
   const [prev, next, close] = ['prev', 'next', 'close'].map((a) => $(`[data-a=${a}]`, p.el));
-  close.hidden = !multi;
-  prev.disabled = multi ? at <= 0 : sp.i === 0;
-  next.disabled = multi ? at < 0 || at >= items.length - 1 : sp.i >= S.res.ranking.length - 1;
+  close.hidden = !multi || free;
+  prev.disabled = free || (multi ? at <= 0 : sp.i === 0);
+  next.disabled = free || (multi ? at < 0 || at >= items.length - 1 : sp.i >= S.res.ranking.length - 1);
   for (const [b, w] of [[prev, '이전'], [next, '다음']]) {
     const l = `${w} ${multi ? '대상' : '순위'}`;
     b.title = l;
     b.setAttribute('aria-label', l);
   }
-  $('[data-r=count]', p.el).textContent = multi ? (at >= 0 ? `고른 대상 ${at + 1} / ${items.length}` : '') : `순위 ${row.rank} / ${S.res.ranking.length}`;
-  const tag = sp.kind === 'rank' ? `${row.rank}위` : sp.kind === 'member' ? `${row.rank}위 묶음` : `${row.rank}위 · 다른 STEP 의심`;
+  $('[data-r=count]', p.el).textContent = free ? '순위 밖' : multi ? (at >= 0 ? `고른 대상 ${at + 1} / ${items.length}` : '') : `순위 ${row.rank} / ${S.res.ranking.length}`;
+  const [tag, tcls] = free ? FREE_TAG[t.side] || ['순위 밖', 'plain']
+    : [sp.kind === 'rank' ? `${row.rank}위` : sp.kind === 'member' ? `${row.rank}위 묶음` : `${row.rank}위 · 다른 STEP 의심`, ''];
   const dh = $('[data-r=dh]', p.el);
-  dh.innerHTML = `<span class="concl-tag">${tag}</span><span class="t">${esc(t.step_name)}</span>${t.desc ? `<span class="muted">· ${esc(t.desc)}</span>` : ''}`;
-  dh.title = `${stepText(t)}\n${sp.kind === 'rank' ? '원래 경로' : '경로'} ${t.path}${sp.kind === 'rank' ? '' : ` · ${row.rank}위와 웨이퍼 ${fmt.pct(t.overlap, 0)} 겹침`}`;
+  dh.innerHTML = `<span class="concl-tag${tcls ? ' ' + tcls : ''}">${tag}</span><span class="t">${esc(t.step_name)}</span>${t.desc ? `<span class="muted">· ${esc(t.desc)}</span>` : ''}`;
+  dh.title = free ? `${stepText(t)}\n순위에 없는 경로 · 판정 근거와 숫자는 funnel 점과 같음`
+    : `${stepText(t)}\n${sp.kind === 'rank' ? '원래 경로' : '경로'} ${t.path}${sp.kind === 'rank' ? '' : ` · ${row.rank}위와 웨이퍼 ${fmt.pct(t.overlap, 0)} 겹침`}`;
   p.el.classList.toggle('rel', sp.kind !== 'rank');
   renderChips(p);
   renderGroup(p);
@@ -1534,6 +1628,7 @@ function renderChips(p) {
 function renderGroup(p) {
   const box = $('[data-r=group]', p.el);
   const sp = p.spec;
+  if (sp.kind === 'free') { box.hidden = true; box.innerHTML = ''; return; }
   const g = groupOf(sp.i);
   if (g.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
   const rank = S.res.ranking[sp.i].rank;
@@ -1570,8 +1665,8 @@ function renderRelated(p) {
   const box = $('[data-r=related]', p.el);
   const btn = $('[data-a=rel]', p.el);
   const sp = p.spec;
-  const row = S.res.ranking[sp.i];
-  const has = !!(row.merged.length || row.cross);
+  const row = sp.kind === 'free' ? null : S.res.ranking[sp.i];
+  const has = !!(row && (row.merged.length || row.cross));
   btn.hidden = !has;
   btn.textContent = `비교표 ${p.relOpen ? '▾' : '▸'}`;
   btn.setAttribute('aria-expanded', String(!!p.relOpen));
@@ -2288,7 +2383,8 @@ function bindFunnel() {
     const c = e.target.closest('circle[data-i]');
     const k = c ? S.res.funnel.marks[+c.dataset.i] : null;
     const r = k ? k.rank || k.target : null;
-    if (!r) {                                         // 빈 곳(또는 순위와 상관없는 점)을 누르면 선택을 푼다
+    if (!r && k) { openFree(k); return; }              // 순위 · 묶음이 없는 점: 고른 순위는 그대로 두고 그 경로를 상세에서 본다
+    if (!r) {                                         // 빈 곳을 누르면 선택을 푼다
       const box = fsv.getBoundingClientRect();
       const x = e.clientX - box.left;
       const y = e.clientY - box.top;
@@ -2371,8 +2467,9 @@ function init() {
     renderRanking();
     revealRow(0);
   });
-  $('#concl-copy').addEventListener('click', async () => {
-    toast(await copyText(S.conclText) ? '결론 문장을 복사했습니다. 회의록 · 메신저에 붙여 넣으세요.' : '복사하지 못했습니다. 문장을 드래그해서 복사하세요.', { kind: '' });
+  $('#concl-copy').addEventListener('click', async () => {   // 결론 문장 + 이 실행 링크 (1위가 열림)
+    const text = `${S.conclText}\n${location.origin}${location.pathname}#run=${S.runId}`;
+    toast(await copyText(text) ? '결론 문장과 실행 링크를 복사했습니다. 회의록 · 메신저에 붙여 넣으세요.' : '복사하지 못했습니다. 문장을 드래그해서 복사하세요.', { kind: '' });
   });
   $('#rank-csv').addEventListener('click', () => { if (S.res) rankingCsv(); });
   $('#funnel-legend').addEventListener('click', (e) => {   // 따라 올라온 점: 흐리게 · 숨기기 · 그대로 (경로 비교에도 같이)
