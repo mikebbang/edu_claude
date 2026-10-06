@@ -228,7 +228,9 @@ table.rank th.num .sort { margin: 0 3px 0 0; }
 /* 순위표: 숫자 열은 줄바꿈 없이 좁게, 경로 열이 남는 폭을 다 쓴다. 경로는 "O1:유닛" 덩어리 사이에서만 줄을 바꾼다 */
 table.rk td { white-space: nowrap; }
 table.rk td.pathcell { white-space: normal; width: 100%; max-width: 0; }
-table.rk .step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.rk .step { white-space: normal; overflow-wrap: anywhere; }   /* STEP 이름 · 설명은 줄여 자르지 않고 줄을 바꿔 다 보인다 */
+table.rk .step.has-tag { align-items: flex-start; }
+table.rk .step.has-tag .st { white-space: normal; overflow-wrap: anywhere; }
 table.rk .note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* 여러 개 골랐을 때 아래 상세에 보이는 줄 · 묶인 대상 줄("+n 같은 웨이퍼"로 펼침) */
 table.rank tbody tr.cur td { background: color-mix(in srgb, var(--ring) 16%, var(--card)); }
