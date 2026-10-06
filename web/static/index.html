@@ -138,7 +138,7 @@
     <div class="grid-main">
       <div class="card">
         <div class="card-head">
-          <h2>Funnel</h2><span class="muted small" id="fhint">모든 STEP의 조합 · 드래그로 여러 순위 고르기 · 빈 곳 클릭: 선택 풀기 · Ctrl/Shift: 더하기</span><span class="grow"></span>
+          <h2>Funnel</h2><span class="muted small" id="fhint">모든 STEP의 경로</span><span class="help" data-help="howto"><svg class="ico-info" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.6v.1"/></svg></span><span class="grow"></span>
           <span class="seg small icons" id="fview" role="group" aria-label="funnel 보는 범위">
             <button type="button" data-v="all" class="on" aria-label="띠 전체 보기" data-help="fview_all"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5C9 9 14 10.6 21 11V13C14 13.4 9 15 3 19.5Z" fill="currentColor" fill-opacity=".2" stroke="none"/><path d="M3 4.5C9 9 14 10.6 21 11"/><path d="M3 19.5C9 15 14 13.4 21 13"/></svg></button><button type="button" data-v="pts" aria-label="점 위주로 보기" data-help="fview_pts"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><circle cx="10" cy="11" r="1.3" fill="currentColor"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="15" r="1.3" fill="currentColor"/></svg></button>
           </span>
@@ -146,7 +146,19 @@
             <button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="yz">y_value</button><button type="button" data-v="bz">bad 비율</button>
           </span>
         </div>
-        <div class="chart" id="funnel"><canvas></canvas><svg role="img" aria-label="funnel 차트"></svg></div>
+        <div class="chart" id="funnel"><canvas></canvas><svg role="img" aria-label="funnel 차트"></svg>
+          <!-- 처음 한 번만: 사용법 (닫으면 이 브라우저에서는 다시 안 나옴 · 제목 옆 ⓘ에 같은 설명) -->
+          <div class="first-tip" id="first-tip" role="note" hidden>
+            <b>이렇게 씁니다</b>
+            <ul>
+              <li>점을 누르면 그 순위(순위가 없는 점은 그 경로)를 아래 상세에서 봅니다.</li>
+              <li>빈 곳에서 끌면 여러 순위를 한꺼번에 고르고, Ctrl · ⌘ · Shift를 누르면 더해 고릅니다. 빈 곳을 누르면 풀립니다.</li>
+              <li>순위표 줄을 눌러도 되고, ← → 키로 순위를 넘깁니다.</li>
+              <li>상세의 칸이나 경로 칩을 누르면 경로를 바꿔 봅니다.</li>
+            </ul>
+            <button type="button" class="mini" id="first-tip-ok">알겠어요</button>
+          </div>
+        </div>
         <div class="legend" id="funnel-legend"></div>
       </div>
       <div class="card">
@@ -159,9 +171,9 @@
 
   <!-- 비교 띠: 순위를 여러 개 고르면 대상마다 한 줄 (회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼, 빨간 점 = 이 경로) -->
   <section class="card cmp" id="cmp" hidden aria-label="고른 대상 비교">
-    <div class="card-head"><h2>고른 대상 비교</h2><span class="help" data-help="cmp"><svg class="ico-info" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.6v.1"/></svg></span>
+    <div class="card-head"><h2>고른 대상 비교</h2>
       <span class="muted small" id="cmp-sub"></span><span class="grow"></span>
-      <span class="legend cmp-legend"><span class="item"><span class="dot" style="background:var(--bad)"></span>이 경로</span><span class="item"><span class="dot" style="background:var(--muted)"></span>같은 Order를 다른 Unit으로 지난 웨이퍼</span></span></div>
+      <span class="legend cmp-legend" data-help="cmp"><span class="item"><span class="dot" style="background:var(--bad)"></span>이 경로</span><span class="item"><span class="dot" style="background:var(--muted)"></span>같은 Order를 다른 Unit으로 지난 웨이퍼</span></span></div>
     <div class="cmp-body" id="cmp-body"></div>
   </section>
 
@@ -208,21 +220,21 @@
     <div class="related" data-r="related" hidden></div>
     <div class="grid-2x2">
       <div class="sub cell">
-        <div class="sub-head"><h3>Order × Unit</h3><span class="grow"></span><span class="muted small">칸 = 그 Order에서 그 Unit을 지난 웨이퍼 · 클릭해서 고르거나 빼기</span></div>
+        <div class="sub-head"><h3>Order × Unit</h3><span class="grow"></span><span class="muted small">칸 = 그 Order에서 그 Unit을 지난 웨이퍼</span></div>
         <div class="blocks" data-r="blocks"></div>
       </div>
       <div class="sub cell">
         <div class="sub-head"><h3>웨이퍼 산점도</h3><span class="grow"></span>
           <label class="size-ctl muted small">점 크기 <input type="range" min="1" max="8" step="0.5" data-a="size" aria-label="산점도 점 크기"></label>
           <button type="button" class="ghost mini" data-a="wcsv" title="이 경로와 같은 Order를 다른 Unit으로 지난 웨이퍼 목록(lot · wafer_id · 시각 · y_value · good_bad)을 CSV로"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg>CSV</button>
-          <span class="seg small" data-r="cseg" role="group" aria-label="산점도 색"><button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">조합별 색</button></span>
+          <span class="seg small" data-r="cseg" role="group" aria-label="산점도 색"><button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">경로별 색</button></span>
         </div>
         <div class="legend" data-r="slegend"></div>
         <svg class="chart-svg" data-r="scatter" role="img" aria-label="웨이퍼 산점도"></svg>
       </div>
       <div class="sub cell">
         <div class="sub-head"><h3>경로 비교</h3><span class="grow"></span>
-          <span class="seg small" data-r="sseg" role="group" aria-label="비교 범위"><button type="button" data-v="step" class="on" title="이 STEP에서 계산한 모든 조합 (위 funnel을 이 STEP만 걸러 본 것)">STEP 전체</button><button type="button" data-v="same" title="지금 고른 Order들을 다른 Unit으로 지난 조합">같은 Order</button></span>
+          <span class="seg small" data-r="sseg" role="group" aria-label="비교 범위"><button type="button" data-v="step" class="on" title="이 STEP에서 계산한 모든 경로 (위 funnel을 이 STEP만 걸러 본 것)">STEP 전체</button><button type="button" data-v="same" title="지금 고른 Order들을 다른 Unit으로 지난 경로">같은 Order</button></span>
           <span class="seg small" data-r="pseg" role="group" aria-label="비교 차트 세로축"><button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="yz">y_value</button><button type="button" data-v="bz">bad 비율</button><button type="button" data-v="ex">초과 bad</button></span>
         </div>
         <div class="legend pcap" data-r="pcap"></div>

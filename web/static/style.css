@@ -201,6 +201,12 @@ button.flag.warn { color: var(--warn); background: var(--hover); border-color: v
 #funnel svg { cursor: crosshair; touch-action: none; user-select: none; }
 .chart-svg { display: block; width: 100%; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink2); margin-top: 4px; }
+/* 처음 한 번 뜨는 사용법 말풍선 (funnel 왼쪽 위) */
+.first-tip { position: absolute; top: 10px; left: 72px; z-index: 5; max-width: 360px; padding: 12px 14px 10px; border-radius: 12px; font-size: 12.5px; line-height: 1.55;
+  background: var(--card); border: 1px solid var(--accent-line); box-shadow: var(--shadow); color: var(--ink); }
+.first-tip ul { margin: 6px 0 8px; padding-left: 18px; }
+.first-tip li + li { margin-top: 3px; }
+.cmp-legend[data-help] { cursor: help; }
 .legend .item { display: inline-flex; align-items: center; gap: 5px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
 .dot.hollow { background: transparent; border: 1.5px solid; box-sizing: border-box; }   /* 따라 올라온 점 (속 빈 원) */

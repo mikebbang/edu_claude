@@ -140,7 +140,8 @@ const HELP = {
   dvalue: 'good_bad가 없을 때의 순위 기준: 웨이퍼 수 × (이 경로 y_value 평균 − 전체 평균).',
   certainty: '기준선 대비 위치입니다. 1을 넘으면 기준선 밖(우연으로 보기 어려움)입니다. 예: 2.0 = 가운데 선에서 기준선까지 거리의 2배만큼 벗어남.',
   overlap: '두 대상의 웨이퍼를 합친 것 중 양쪽 모두에 있는 비율입니다. 100%면 웨이퍼가 똑같아 데이터로는 둘을 가릴 수 없습니다.',
-  fview_all: '띠 전체: 경계선을 양 끝까지 보여 줍니다. 웨이퍼가 적은 왼쪽의 넓은 띠까지 다 보여서 funnel 모양이 한눈에 들어옵니다.',
+  howto: '점을 누르면 그 순위(순위가 없는 점은 그 경로)를 아래 상세에서 봅니다. 빈 곳에서 끌면 여러 순위를 한꺼번에 고르고, Ctrl · ⌘ · Shift를 누르고 누르거나 끌면 더해 고릅니다. 빈 곳을 누르면 고른 것이 풀립니다. 순위표 줄을 눌러도 되고, ← → 키로 순위를 넘깁니다. 상세의 칸이나 경로 칩을 누르면 경로를 바꿔 봅니다.',
+  fview_all: '띠 전체: 기준선을 양 끝까지 보여 줍니다. 웨이퍼가 적은 왼쪽의 넓은 띠까지 다 보여서 funnel 모양이 한눈에 들어옵니다.',
   fview_pts: '점 위주: 점이 모인 곳을 크게 보여 줍니다. 점끼리의 차이가 잘 보이지만 띠 양 끝은 잘릴 수 있습니다.',
   follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
   rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
@@ -435,6 +436,7 @@ async function loadResult(id, token, note = '') {
   renderMore();
   setMore(false);
   renderFunnel();
+  $('#first-tip').hidden = !!store.get('uc.tip1', '');   // 사용법 말풍선은 이 브라우저에서 처음 한 번만 (닫을 때까지)
   const want = parseView(location.hash);
   S.cueOn = false;                                     // 처음 여는 보기에는 "상세 ↓" 단추를 띄우지 않음
   if (S.res.ranking.length || want.t) applyView(want);   // 주소에 보기가 없으면 1위
@@ -481,7 +483,7 @@ function renderMeta() {
   const name = v ? (job ? `job ${job}` : v.file_name || 'raw.csv') : S.fileId ? $('#q-file-name').textContent : `job ${$('#job_id').value}`;
   $('#meta-src').innerHTML = `${job ? ICON_DB : ICON_FILE}${esc(name)}`;
   $('#meta-text').textContent = [`${fmt.int(d.wafers)}장`, d.bad_rate != null ? `bad ${fmt.pct(d.bad_rate)}` : '',
-    `조합 ${fmt.int(j.combos)}개 → 기준선 밖 ${fmt.int(j.over)}개`, st.main, st.extra].filter(Boolean).join(' · ');
+    `경로 ${fmt.int(j.combos)}개 검사 → 기준선 밖 ${fmt.int(j.over)}개`, st.main, st.extra].filter(Boolean).join(' · ');
   const nFix = fixNotes(I).length;
   $('#meta-flags').innerHTML = (nFix ? `<button type="button" class="flag" data-more>보정 ${nFix}개</button>` : '')
     + (I.warnings.length ? `<button type="button" class="flag warn" data-more>확인할 점 ${I.warnings.length}개</button>` : '');
@@ -510,7 +512,7 @@ function renderConcl() {
   if (!R.length) {
     $('#concl-body').innerHTML = `<div class="concl-main">기준선을 넘은 혐의 대상이 없습니다</div>
       <div class="muted small">MIN_N을 낮추거나 MAX_DEPTH를 늘려 다시 볼 수 있습니다.</div>`;
-    S.conclText = `${pre}기준선을 넘은 혐의 대상 없음 (조합 ${I.judge.combos}개 검사)`;
+    S.conclText = `${pre}기준선을 넘은 혐의 대상 없음 (경로 ${I.judge.combos}개 검사)`;
     return;
   }
   const r = R[0];
@@ -752,13 +754,13 @@ function renderMore() {
   $('#concl-more').innerHTML = [
     line('실행', `job_id ${jobs.length ? esc(jobs.join(', ')) : '–'} · analysis_date ${esc((d.analysis_dates || []).join(', ') || '–')}${v ? ` · ${when(v.created, true)} 실행` : ''} · ${I.timings.total}초`),
     line('데이터', [d.n_excluded ? `good_bad N 등 ${fmt.int(d.n_excluded)}장은 계산에서 뺌` : '', `lot ${fmt.int(d.lots)}개`,
-      `STEP ${fmt.int(d.steps)}개 (STEP SEQ ${fmt.int(d.step_seqs)}개)`, `가능한 조합 ${fmt.int(j.possible)}개`].filter(Boolean).join(' · ')),
+      `STEP ${fmt.int(d.steps)}개 (STEP SEQ ${fmt.int(d.step_seqs)}개)`, `가능한 경로 ${fmt.int(j.possible)}개`].filter(Boolean).join(' · ')),
     notes.length ? line('보정', esc(notes.join(' · '))) : '',
     I.warnings.length ? line('확인할 점', esc(I.warnings.join(' · ')), 'warn') : '',
     `<details><summary>판정 정보</summary>
-      <table><tr><th>묶음</th><th class="num">가능한 조합</th><th class="num">기본 기준 z</th><th class="num">기준 z (퍼짐 반영)</th></tr>${groups}</table>
-      <div class="muted small">5%를 묶음 ${j.groups.length}개에 똑같이 나눔 · 조합이 나온 가장 큰 Order 수 ${j.depth} ·
-      ${j.sigma ? `Order 2개 이상에서 웨이퍼 ${j.sigma}장 미만은 가장 나쁜 경우에도 기준선을 넘을 수 없어 만들지 않음` : '넘을 수 없는 조합 없음'} ·
+      <table><tr><th>묶음</th><th class="num">가능한 경로</th><th class="num">기본 기준 z</th><th class="num">기준 z (퍼짐 반영)</th></tr>${groups}</table>
+      <div class="muted small">5%를 묶음 ${j.groups.length}개에 똑같이 나눔 · 경로가 나온 가장 큰 Order 수 ${j.depth} ·
+      ${j.sigma ? `Order 2개 이상에서 웨이퍼 ${j.sigma}장 미만은 가장 나쁜 경우에도 기준선을 넘을 수 없어 만들지 않음` : '넘을 수 없는 경로 없음'} ·
       같은 Order ${fmt.int(j.same_orders)}개는 앞 Order로 합쳐 계산 · MIN_N ${st.min_n} · MAX_DEPTH ${st.max_depth ?? '제한 없음'}</div></details>`,
   ].join('');
 }
@@ -766,7 +768,7 @@ function renderMore() {
 // ── Funnel ─────────────────────────────────────────────────────────────
 const yTitle = (m) => ({ judg: '종합 점수 (위쪽이 나쁨)', yz: `y_value (보정 · ${S.res.info.higher_is_worse === false ? '아래쪽' : '위쪽'}이 나쁨)`,
   bz: 'bad 비율 (보정)' })[m];
-const BOUND_NOTE = { judg: '경계선 (판정 기준)', yz: '경계선 (y_value 하나로만 판정할 때)', bz: '경계선 (bad 하나로만 판정할 때)' };
+const BOUND_NOTE = { yz: '기준선 = y_value 하나로만 판정할 때', bz: '기준선 = bad 하나로만 판정할 때' };   // 보정 축에서만 범례에 (종합은 판정 기준 그대로)
 
 // 보정 축(y_value · bad 비율): good_bad가 없으면 종합이 곧 y_value만 본 것이라 숨기고, 예전 코드로 계산한 기록이면 흐리게 (누르면 이유)
 const sigOn = () => !!(S.res && S.res.info.has_bad && S.res.funnel.bounds.yz);
@@ -876,17 +878,17 @@ function renderFunnel() {
   }
   s += '</g>';
   const yt = m === 'judg' ? [] : linTicks(lo, hi, 5).map((v) => ({ v, l: m === 'bz' ? Math.round(v * 100) + '%' : fmt.tick(v) }));
-  s += axes({ L, R, T, B, xs, ys, xt: logTicks(ns[0], ns[ns.length - 1]).map((v) => ({ v, l: fmt.int(v) })), yt, xl: '웨이퍼 수 N (조합을 지난 웨이퍼)', yl: yTitle(m), yo: 44 });
+  s += axes({ L, R, T, B, xs, ys, xt: logTicks(ns[0], ns[ns.length - 1]).map((v) => ({ v, l: fmt.int(v) })), yt, xl: '웨이퍼 수 N (경로를 지난 웨이퍼)', yl: yTitle(m), yo: 44 });
   s += '<g id="fmarks"></g><g id="fbrush"></g>';
   sv.innerHTML = s;
   drawMarks();
-  $('#funnel-legend').innerHTML = [
-    `<span class="item"><span class="dot" style="background:${C.muted}"></span>기준선 안 ${fmt.int(fn.gray_total)}개${gn.length < fn.gray_total ? ` (${fmt.int(gn.length)}개만 그림)` : ''}</span>`,
+  const nGood = fn.marks.filter((k) => k.side === 'good').length;
+  $('#funnel-legend').innerHTML = [                     // 지금 그림에 있는 것만: 원인 후보 · 따라 올라온 점 · good path · (보정 축) 신호 하나만 밖 · 기준선 안
     ...followLegend(fn),
-    `<span class="item"><span class="dot" style="background:${C.good}"></span>good path ${fmt.int(fn.marks.filter((k) => k.side === 'good').length)}개</span>`,
+    nGood ? `<span class="item"><span class="dot" style="background:${C.good}"></span>good path ${fmt.int(nGood)}개</span>` : '',
     sigLegend(fn, m),
-    `<span class="item">— ${BOUND_NOTE[m]}</span>`,
-    `<span class="item"><span class="dot" style="border:2px solid ${C.ring};width:10px;height:10px"></span>고른 순위</span>`,
+    BOUND_NOTE[m] ? `<span class="item">— ${BOUND_NOTE[m]}</span>` : '',
+    `<span class="item"><span class="dot" style="background:${C.muted}"></span>기준선 안 ${fmt.int(fn.gray_total)}개${gn.length < fn.gray_total ? ` (${fmt.int(gn.length)}개만 그림)` : ''}</span>`,
   ].join('');
 }
 
@@ -897,10 +899,14 @@ const PT_R = 4.5;                                       // funnel 점 크기 (�
 // 범례의 기준선 밖 항목: 분류가 있으면 원인 후보 · 따라 올라온 점(보기 고르기), 이번 버전 전에 계산한 기록이면 bad path 하나로
 function followLegend(fn) {
   const bads = fn.marks.filter((k) => k.side === 'bad');
-  if (!fn.marks.some((k) => k.status)) return [`<span class="item"><span class="dot" style="background:${C.bad}"></span>bad path ${fmt.int(bads.length)}개</span>`];
+  if (!fn.marks.some((k) => k.status)) return [`<span class="item"><span class="dot" style="background:${C.bad}"></span>기준선 밖 ${fmt.int(bads.length)}개</span>`];
   const nf = bads.filter(isFollow).length;
+  const causes = bads.length - nf;
+  const nR = S.res.ranking.length;
+  const merged = bads.filter((k) => !isFollow(k) && k.merged && !k.rank).length;   // 웨이퍼가 같아 순위 한 줄에 묶인 원인 후보
+  const bridge = causes === nR ? '' : causes - merged === nR ? ` (같은 웨이퍼로 묶으면 순위 ${nR}개)` : ` (순위 ${nR}개)`;
   const seg = ['fade', '흐리게', 'hide', '숨기기', 'show', '그대로'];
-  return [`<span class="item"><span class="dot" style="background:${C.bad}"></span>원인 후보 ${fmt.int(bads.length - nf)}개</span>`,
+  return [causes ? `<span class="item"><span class="dot" style="background:${C.bad}"></span>원인 후보 ${fmt.int(causes)}개${bridge}</span>` : '',
     nf ? `<span class="item"><span class="dot hollow" style="border-color:${C.bad}"></span>따라 올라온 점 ${fmt.int(nf)}개${helpIcon('follow')}`
       + `<span class="seg small" id="ffollow" role="group" aria-label="따라 올라온 점 보기">${[0, 2, 4].map((j) => `<button type="button" data-v="${seg[j]}" class="${S.follow === seg[j] ? 'on' : ''}">${seg[j + 1]}</button>`).join('')}</span></span>` : ''];
 }
@@ -982,7 +988,7 @@ function markTip(e) {
     : k.merged ? `웨이퍼가 ${k.merged}위와 같아 그 줄에 묶인 대상 · 누르면 이 대상의 상세를 봅니다`
       : isFollow(k) ? (k.status === 'inherited' ? '따라 올라온 점 · 상속 (Order를 하나 뺀 경로보다 뚜렷하게 나쁘지 않음)' : '따라 올라온 점 · 하위 기인 (더 좁은 경로가 이 차이를 설명함)')
         + (k.cause ? `<br>기대는 경로: ${esc(k.cause)}` : '') + (k.target ? ` · ${k.target}위 대상 묶음` : '')
-      : k.target ? `${k.target}위 대상에 포함 (같이 올라온 조합)`
+      : k.target ? `${k.target}위 대상에 포함 (같이 올라온 경로)`
         : k.side === 'bad' ? '기준선 밖 (혐의 대상과 묶이지 않음)' : k.side === 'sig' ? '' : 'good path (기준선보다 뚜렷하게 좋음)';
   const lines = [`<b>${esc(k.label)}</b>`, who, basisLine(k.side, k.oy, k.ob),
     `웨이퍼 ${fmt.int(k.n)}장 · Order ${k.k}개 · Certainty ${k.certainty == null ? '–' : k.certainty.toFixed(2)}`,
@@ -1102,11 +1108,13 @@ function renderRanking() {
   const hasBad = S.res.info.has_bad;
   const cols = COLS.filter((c) => hasBad || !c.bad);
   const label = (c) => (c.key === 'excess' && !hasBad ? 'N × ΔValue' : c.label);   // good_bad가 없으면 순위 기준 = 웨이퍼 수 × Value 차이
-  const help = (c) => helpIcon(c.key === 'excess' && !hasBad ? 'dvalue' : c.key, !c.left);
+  const hk = (c) => (c.key === 'excess' && !hasBad ? 'dvalue' : c.key);
+  const help = (c) => (c.key === 'excess' || c.key === 'certainty' ? helpIcon(hk(c), !c.left) : '');   // ⓘ는 처음 보는 말에만
+  const hint = (c) => (c.key === 'excess' || c.key === 'certainty' ? '' : ` data-help="${hk(c)}"`);   // 나머지는 머리글에 마우스를 올리면 설명
   const head = cols.map((c) => {
     const sort = S.sort.key === c.key ? `<span class="sort">${S.sort.dir > 0 ? '▴' : '▾'}</span>` : '';
-    return c.left ? `<th class="l" data-k="${c.key}">${label(c)}${help(c)}${sort}</th>`
-      : `<th class="num" data-k="${c.key}">${sort}${help(c)}${label(c)}</th>`;
+    return c.left ? `<th class="l" data-k="${c.key}"${hint(c)}>${label(c)}${help(c)}${sort}</th>`
+      : `<th class="num" data-k="${c.key}"${hint(c)}>${sort}${help(c)}${label(c)}</th>`;
   }).join('');
   const sw = Math.round((S.res.info.settings.same_wafers ?? 0.9) * 100);
   const cert = (v) => (v == null ? '–' : v.toFixed(2));
@@ -1145,7 +1153,7 @@ function renderRanking() {
     ? `<table class="rank rk"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
     : '<div class="muted" style="padding:10px">기준선을 넘은 혐의 대상이 없습니다.</div>';
   $('#rank-sub').textContent = S.res.ranking.length
-    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${multi ? ` · ${S.picks.length}개 고름` : ''} · Ctrl/Shift+클릭으로 여러 개`
+    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${multi ? ` · ${S.picks.length}개 고름` : ''}`
     : '';
 }
 
@@ -1383,7 +1391,7 @@ function drawStrip(items, data) {
   box.innerHTML = `<div role="table" aria-label="고른 대상 비교">${axis}${body}</div>`
     + (S.picks.flatMap(groupOf).length > items.length ? `<div class="muted small cmp-more">대상이 많아 앞의 ${CMP_MAX}개만 그렸습니다.</div>` : '');
   if (had) { const el = $(`.cmp-row[data-id="${CSS.escape(had.dataset.id)}"]`, box); if (el) el.focus({ preventScroll: true }); }
-  $('#cmp-sub').textContent = `${S.picks.length}개 순위 · ${items.length}개 대상 · ${hasBad ? 'bad 비율 = bad 웨이퍼 ÷ 웨이퍼' : 'y_value 평균'} · 줄을 누르면 아래 상세가 그 대상으로 바뀝니다`;
+  $('#cmp-sub').textContent = `${S.picks.length}개 순위 · ${items.length}개 대상 · ${hasBad ? 'bad 비율 = bad 웨이퍼 ÷ 웨이퍼' : 'y_value 평균'}`;
 }
 
 // 비교 띠 한 줄의 수 (점 위에 올리면)
@@ -1496,7 +1504,7 @@ function scatterTip(p, e) {
   const w = D.wafers;
   const i = +c.dataset.i;
   const name = w.wid ? `${esc(w.lots[w.li[i]])} · wafer ${esc(w.wid[i])}` : `웨이퍼 ${i + 1} (이 실행은 웨이퍼 번호를 저장하지 않았습니다)`;
-  showTip(`<b>${name}</b><br>${w.g[i] === D.sel_group ? '선택 경로' : '다른 Unit 조합'} ${esc(D.groups[w.g[i]].label)}`
+  showTip(`<b>${name}</b><br>${w.g[i] === D.sel_group ? '선택 경로' : '다른 경로'} ${esc(D.groups[w.g[i]].label)}`
     + `<br>tkin_time (${esc(D.time_order)}) ${isoTime(w.t[i]).slice(0, 16)}<br>y_value ${fmt.num(w.v[i])}`
     + (D.has_bad ? ` · ${w.b[i] ? '<span class="badtxt">bad</span>' : 'good'}` : ''), e.clientX, e.clientY);
 }
@@ -1776,7 +1784,7 @@ function waferGroups(p) {
   const other = order.slice(PALETTE.length - 1);
   const col = new Map([[selG, C.bad], ...top.map((g, i) => [g, PALETTE[i]])]);
   const items = [{ g: [selG], c: C.bad, l: D.groups[selG]?.label ?? '' }, ...top.map((g, i) => ({ g: [g], c: PALETTE[i], l: D.groups[g].label }))];
-  if (other.length) items.push({ g: other, c: C.muted, l: `기타 ${other.length}개 조합` });
+  if (other.length) items.push({ g: other, c: C.muted, l: `기타 ${other.length}개 경로` });
   return { color: (g) => col.get(g) ?? C.muted, items };
 }
 
@@ -1862,7 +1870,7 @@ function renderPeers(p) {
     const e = stepData(D.step);
     if (!e.data) {
       renderPeerCap(p, null, e.err);
-      el.innerHTML = `<text x="20" y="40" fill="${C.ink2}">${e.err ? '‘같은 Order’를 누르면 고른 Order들의 다른 Unit 조합을 봅니다' : 'STEP 전체 조합을 불러오는 중…'}</text>`;
+      el.innerHTML = `<text x="20" y="40" fill="${C.ink2}">${e.err ? '‘같은 Order’를 누르면 고른 Order들의 다른 Unit 경로를 봅니다' : 'STEP 전체 경로를 불러오는 중…'}</text>`;
       if (!e.err) e.promise.then(() => { if (S.panel === p && p.det === D && p.pScope === 'step') renderPeers(p); });
       return;
     }
@@ -1949,17 +1957,17 @@ function renderPeerCap(p, info, err) {
     const nf = info ? info.flag.filter((f) => f === 3 || f === 4).length : 0;
     const o = info && (p.pMode === 'yz' ? info.oy : p.pMode === 'bz' ? info.ob : null);
     const ns = o ? o.filter((v, i) => v && !info.flag[i]).length : 0;   // 이 신호만 보면 밖 · 판정 안 됨
-    el.textContent = r ? `${who}: 이 STEP 조합 ${fmt.int(r.total)}개 중 Certainty ${rk(r.cert)} · ${exName()} ${rk(r.ex)}`
+    el.textContent = r ? `${who}: 이 STEP 경로 ${fmt.int(r.total)}개 중 Certainty ${rk(r.cert)} · ${exName()} ${rk(r.ex)}`
       + (nf ? (S.follow === 'hide' ? ` · 따라 올라온 점 ${nf}개 숨김` : S.follow === 'fade' ? ' · 속 빈 빨간 점 = 따라 올라온 점' : '') : '')
       + (ns ? ` · 테두리 회색 점 = ${p.pMode === 'yz' ? 'y_value' : 'bad'}만 보면 밖(판정 안 됨) ${ns}개` : '')
-      + (info && info.shown < info.total ? ` · 기준선 안 조합은 ${fmt.int(info.shown)}개만 그림` : '') : '';
+      + (info && info.shown < info.total ? ` · 기준선 안 경로는 ${fmt.int(info.shown)}개만 그림` : '') : '';
     return;
   }
   const others = D.peers.filter((q) => q.g !== D.sel_group);
   const cr = sel.certainty == null ? null : 1 + others.filter((q) => q.certainty != null && q.certainty > sel.certainty).length;
   const er = sel.ex == null ? null : 1 + others.filter((q) => q.ex != null && q.ex > sel.ex).length;
   const orders = sel.items.map(([q]) => D.orders[q].name).join(' · ');
-  el.textContent = `${who}: 같은 Order(${orders})의 Unit 조합 ${fmt.int(others.length + 1)}개 중 Certainty ${rk(cr)} · ${exName()} ${rk(er)}`;
+  el.textContent = `${who}: 같은 Order(${orders})의 경로 ${fmt.int(others.length + 1)}개 중 Certainty ${rk(cr)} · ${exName()} ${rk(er)}`;
 }
 
 function peerTip(p, e) {
@@ -2499,6 +2507,7 @@ function init() {
   });
   $('#setup-close').addEventListener('click', () => setSetup(false));
   $('#more-btn').addEventListener('click', () => setMore($('#concl-more').hidden));
+  $('#first-tip-ok').addEventListener('click', () => { store.set('uc.tip1', '1'); $('#first-tip').hidden = true; });
   $('#meta-flags').addEventListener('click', (e) => { if (e.target.closest('[data-more]')) setMore(true); });
   $('#concl-body').addEventListener('click', (e) => {   // "+n 같은 웨이퍼": 순위표에서 1위의 묶인 대상 줄을 펼쳐 보여 준다
     if (!e.target.closest('.grp[data-concl]') || !S.res) return;
