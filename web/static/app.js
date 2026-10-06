@@ -18,7 +18,7 @@ const S = {
   stepCache: new Map(),                               // 경로 비교(STEP 전체)용 조합 · STEP마다 한 번 받음
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
   db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 raw.csv로만)
-  fView: 'all', pendingDel: new Set(), toasts: [], conclText: '', pendingSel: null,   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
+  fView: 'all', pendingDel: new Set(), toasts: [], conclText: '', pendingSel: null, cueOn: false, cueTimer: null,   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
   home: { items: [], at: -1, mode: null, q: '', db: false },
 };
 
@@ -425,20 +425,24 @@ async function loadResult(id, token, note = '') {
   setSetup(false);                                     // 결과가 화면 위로 오게 설정은 한 줄로 접는다
   syncEmpty();
   sigButtons($('#yseg'));
+  $('#yseg').hidden = !S.res.info.has_bad;              // good_bad가 없으면 세로축은 종합 하나뿐이라 버튼 묶음을 숨긴다
   if (S.yMode !== 'judg' && !sigOn()) setSeg($('#yseg'), (S.yMode = 'judg'));
   const jobs = S.res.info.data.job_ids || [];
-  $('#topnote').textContent = `${jobs.length ? `JOB ID : ${jobs[0]}${jobs.length > 1 ? ` 외 ${jobs.length - 1}개` : ''} · ` : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
+  const run = S.runs.find((x) => x.id === id);
+  $('#topnote').textContent = jobs.length ? `JOB ID : ${jobs[0]}${jobs.length > 1 ? ` 외 ${jobs.length - 1}개` : ''}` : run ? run.file_name || '' : '';   // 웨이퍼 · 혐의 대상 수는 결론 카드 · 순위표에
   renderConcl();
   renderMeta();
   renderMore();
   setMore(false);
   renderFunnel();
   const want = parseView(location.hash);
+  S.cueOn = false;                                     // 처음 여는 보기에는 "상세 ↓" 단추를 띄우지 않음
   if (S.res.ranking.length || want.t) applyView(want);   // 주소에 보기가 없으면 1위
   else {
     renderRanking();
     $('#details').hidden = true;
   }
+  S.cueOn = true;
 }
 
 function hideResults() {
@@ -1175,6 +1179,13 @@ function tFree(k) {
 }
 const FREE_TAG = { good: ['good path', 'good'], sig: ['판정 안 됨', 'plain'], bad: ['기준선 밖 · 순위 없음', ''] };
 
+// 상세 대상의 이름표 [글자, 색 class]: 순위 · 묶음 · 다른 STEP 의심 · 순위 밖 경로(점의 판정)
+function targetTag(sp) {
+  if (sp.kind === 'free') return FREE_TAG[sp.t.side] || ['순위 밖', 'plain'];
+  const rank = S.res.ranking[sp.i].rank;
+  return [sp.kind === 'rank' ? `${rank}위` : sp.kind === 'member' ? `${rank}위 묶음` : `${rank}위 · 다른 STEP 의심`, ''];
+}
+
 // 순위 밖 경로를 상세에서 본다. 고른 순위 · 비교 띠는 그대로 둔다
 function openFree(k) {
   S.cur = tFree(k);
@@ -1260,6 +1271,19 @@ function afterPicks() {
   renderStrip();
   showPanel();
   syncHash();
+  cueDetail();
+}
+
+// 상세가 화면 아래에 있을 때 대상을 바꾸면 "2위 상세 ↓" 단추를 띄운다(노트북 화면에서는 상세가 첫 화면 밖이라 바뀐 게 안 보임).
+// 누르면 상세로 내려가고, 상세가 보이게 스크롤하거나 6초가 지나면 사라진다
+function cueDetail() {
+  const b = $('#detail-cue');
+  clearTimeout(S.cueTimer);
+  const p = S.panel;
+  if (!S.cueOn || !p || !S.cur || $('#details').hidden || p.el.getBoundingClientRect().top < innerHeight - 60) { b.hidden = true; return; }
+  b.textContent = `${targetTag(S.cur)[0]} 상세 ↓`;
+  b.hidden = false;
+  S.cueTimer = setTimeout(() => { b.hidden = true; }, 6000);
 }
 
 // ── 비교 띠: 여러 순위를 골랐을 때 대상마다 한 줄. 회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼, 빨간 점 = 이 경로 ──
@@ -1409,6 +1433,7 @@ function bindStrip() {
 
 // ── 상세: 대상 하나를 크기를 고정한 2 × 2로 ─────────────────────────────
 function resetDetail() {
+  $('#detail-cue').hidden = true;
   if (S.panel) S.panel.el.remove();
   S.panel = null;
   S.cur = null;
@@ -1595,12 +1620,11 @@ function renderHead(p) {
   next.disabled = free || (multi ? at < 0 || at >= items.length - 1 : sp.i >= S.res.ranking.length - 1);
   for (const [b, w] of [[prev, '이전'], [next, '다음']]) {
     const l = `${w} ${multi ? '대상' : '순위'}`;
-    b.title = l;
+    b.title = `${l} (${w === '이전' ? '←' : '→'} 키)`;
     b.setAttribute('aria-label', l);
   }
   $('[data-r=count]', p.el).textContent = free ? '순위 밖' : multi ? (at >= 0 ? `고른 대상 ${at + 1} / ${items.length}` : '') : `순위 ${row.rank} / ${S.res.ranking.length}`;
-  const [tag, tcls] = free ? FREE_TAG[t.side] || ['순위 밖', 'plain']
-    : [sp.kind === 'rank' ? `${row.rank}위` : sp.kind === 'member' ? `${row.rank}위 묶음` : `${row.rank}위 · 다른 STEP 의심`, ''];
+  const [tag, tcls] = targetTag(sp);
   const dh = $('[data-r=dh]', p.el);
   dh.innerHTML = `<span class="concl-tag${tcls ? ' ' + tcls : ''}">${tag}</span><span class="t">${esc(t.step_name)}</span>${t.desc ? `<span class="muted">· ${esc(t.desc)}</span>` : ''}`;
   dh.title = free ? `${stepText(t)}\n순위에 없는 경로 · 판정 근거와 숫자는 funnel 점과 같음`
@@ -2440,6 +2464,21 @@ function init() {
   $('#backdrop').addEventListener('click', closeDrawer);
   $('#empty-all').addEventListener('click', openDrawer);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+  document.addEventListener('keydown', (e) => {          // ← →: 상세의 ◀ ▶와 같이 순위(여러 개 골랐으면 고른 대상)를 넘긴다
+    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (S.view !== 'app' || !S.res || $('#drawer').classList.contains('open')) return;
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;   // 글자 칸 · 점 크기 막대에서는 그대로
+    e.preventDefault();
+    stepTarget(e.key === 'ArrowLeft' ? -1 : 1);
+  });
+  $('#detail-cue').addEventListener('click', () => {
+    $('#detail-cue').hidden = true;
+    if (S.panel) S.panel.el.scrollIntoView({ block: 'start', behavior: smooth() });
+  });
+  window.addEventListener('scroll', () => {               // 상세가 보이면 단추는 필요 없다
+    const b = $('#detail-cue');
+    if (!b.hidden && S.panel && S.panel.el.getBoundingClientRect().top < innerHeight - 60) b.hidden = true;
+  }, { passive: true });
   $('#history').addEventListener('click', (e) => {
     const del = e.target.closest('[data-del]');
     if (del) { removeRun(del.dataset.del); return; }

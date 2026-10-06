@@ -364,6 +364,10 @@ table.rel .tag { margin-left: 0; color: var(--accent); background: var(--accent-
 .tip b { font-weight: 600; }
 .tip .badtxt { color: var(--bad); }
 /* 알림: 화면 아래 가운데 */
+/* 상세가 화면 아래에 있을 때 대상을 바꾸면 뜨는 "2위 상세 ↓" 단추 (알림보다 아래 층) */
+.detail-cue { position: fixed; left: 50%; bottom: 20px; z-index: 55; transform: translateX(-50%); height: 34px; padding: 0 16px; border-radius: 17px;
+  border: 1px solid var(--accent-line); background: var(--accent-bg); color: var(--accent); font-weight: 700; box-shadow: var(--shadow); }
+.detail-cue:hover { background: var(--accent); border-color: var(--accent); color: var(--card); }
 .toasts { position: fixed; left: 50%; bottom: 20px; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 8px; transform: translateX(-50%); pointer-events: none; }
 .toast { display: flex; align-items: center; gap: 10px; max-width: min(680px, 92vw); padding: 9px 8px 9px 16px; border-radius: 12px; background: #17233a; color: #f2f5f8;
   box-shadow: 0 16px 36px -14px #17233a8c; font-size: 13px; pointer-events: auto; animation: toast-in .2s ease-out; transition: opacity .2s, transform .2s; }
