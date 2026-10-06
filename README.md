@@ -77,7 +77,7 @@ nohup .venv/bin/python -m web > web.log 2>&1 &
 ```
 
 - 끌 때: `pkill -f "python -m web"`
-- 로그 보기: `tail -f web.log`
+- 로그 보기: `tail -f web.log` (접속 기록은 앞에 날짜 · 시간이 붙습니다. 예: `2026-10-07 07:55:31 | INFO: 10.222.56.228:61884 - "GET /api/runs HTTP/1.1" 200 OK`)
 
 서버가 다시 켜질 때 자동으로 띄우려면 systemd 서비스로 등록합니다(관리자 권한 필요). `/etc/systemd/system/combi-web.service`:
 
