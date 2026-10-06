@@ -13,7 +13,7 @@ const RECENT_MAX = 10;               // 연 결과가 없을 때 보여 주는 �
 const S = {
   view: null, fileId: null, runId: null, res: null, resId: null, hover: null, yMode: 'judg', sort: { key: 'rank', dir: 1 }, fn: null,
   brush: null, brushed: false, hintTimer: null,
-  picks: [], focus: null, ptSize: 4.5, files: [],
+  picks: [], freePicks: [], focus: null, ptSize: 4.5, files: [],   // freePicks = 끌어서 함께 고른 순위 밖 경로 (good path 등)
   cur: null, open: new Set(), panel: null, cmp: null, cmpSeq: 0, cmpPending: null,   // 상세에 보이는 대상 · 묶인 대상을 펼친 순위 · 상세 카드 · 비교 띠 값
   stepCache: new Map(),                               // 경로 비교(STEP 전체)용 조합 · STEP마다 한 번 받음
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
@@ -140,7 +140,7 @@ const HELP = {
   dvalue: 'good_bad가 없을 때의 순위 기준: 웨이퍼 수 × (이 경로 y_value 평균 − 전체 평균).',
   certainty: '기준선 대비 위치입니다. 1을 넘으면 기준선 밖(우연으로 보기 어려움)입니다. 예: 2.0 = 가운데 선에서 기준선까지 거리의 2배만큼 벗어남.',
   overlap: '두 대상의 웨이퍼를 합친 것 중 양쪽 모두에 있는 비율입니다. 100%면 웨이퍼가 똑같아 데이터로는 둘을 가릴 수 없습니다.',
-  howto: '점을 누르면 그 순위(순위가 없는 점은 그 경로)를 아래 상세에서 봅니다. 빈 곳에서 끌면 여러 순위를 한꺼번에 고르고, Ctrl · ⌘ · Shift를 누르고 누르거나 끌면 더해 고릅니다. 빈 곳을 누르면 고른 것이 풀립니다. 순위표 줄을 눌러도 되고, ← → 키로 순위를 넘깁니다. 상세의 칸이나 경로 칩을 누르면 경로를 바꿔 봅니다.',
+  howto: '점을 누르면 그 순위(순위가 없는 점은 그 경로)를 아래 상세에서 봅니다. 빈 곳에서 끌면 상자 안의 점(순위 · good path 등)을 한꺼번에 골라 비교 띠에 넣습니다. Ctrl 또는 Shift를 누른 채 점을 누르거나 끌면 지금 고른 것에 더합니다. 빈 곳을 누르면 고른 것이 풀립니다. 순위표 줄을 눌러도 되고, ← → 키로 다음 대상으로 넘깁니다. 상세의 칸이나 경로 칩을 누르면 경로를 바꿔 봅니다.',
   fview_all: '띠 전체: 기준선을 양 끝까지 보여 줍니다. 웨이퍼가 적은 왼쪽의 넓은 띠까지 다 보여서 funnel 모양이 한눈에 들어옵니다.',
   fview_pts: '점 위주: 점이 모인 곳을 크게 보여 줍니다. 점끼리의 차이가 잘 보이지만 띠 양 끝은 잘릴 수 있습니다.',
   follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
@@ -250,7 +250,7 @@ async function run() {
 function parseView(hash) {
   const q = new URLSearchParams(String(hash || '').replace(/^#/, ''));
   const run = q.get('run');
-  return { run: run && /^[0-9a-f]+$/.test(run) ? run : null, r: q.has('r') ? q.get('r') : null, t: q.get('t'), p: q.get('p') };
+  return { run: run && /^[0-9a-f]+$/.test(run) ? run : null, r: q.has('r') ? q.get('r') : null, t: q.get('t'), p: q.get('p'), f: q.get('f') };
 }
 
 function viewHash() {
@@ -261,6 +261,7 @@ function viewHash() {
     const ranks = S.picks.map((i) => R[i].rank);
     const first = R.length ? R[0].rank : null;
     if (!(ranks.length === 1 && ranks[0] === first) && !(ranks.length === 0 && !R.length)) out.push('r=' + ranks.join(','));
+    if (S.freePicks.length) out.push('f=' + S.freePicks.map((t) => enc(t.key)).join(','));
     const cur = S.cur;
     if (cur && !(cur.kind === 'rank' && S.picks.length && cur.i === S.picks[0])) out.push('t=' + enc(cur.id));
     const p = S.panel;
@@ -288,17 +289,21 @@ function applyView(v) {
     picks = at >= 0 ? [at] : R.length ? [0] : [];
   }
   picks = [...new Set(picks)].sort((a, b) => a - b);
+  const markOf = (key) => S.res.funnel.marks.find((m) => m.key === key);
+  const frees = v.f ? [...new Set(v.f.split(','))].map(markOf).filter(Boolean).map(tFree) : [];
   let cur = null;
   if (v.t && v.t[0] === 'r') cur = picks.map(tRank).find((x) => x.id === v.t) || null;
   else if (v.t && v.t[0] === 'x') cur = picks.flatMap(groupOf).find((x) => x.id === v.t) || null;
   else if (v.t && v.t[0] === 'f') {
-    const k = S.res.funnel.marks.find((m) => m.key === v.t.slice(1));
-    cur = k ? tFree(k) : null;
+    const k = markOf(v.t.slice(1));
+    cur = frees.find((x) => x.id === v.t) || (k ? tFree(k) : null);
   }
   if (!cur && picks.length) cur = tRank(picks[0]);
+  if (!cur && frees.length) cur = frees[0];
   const sel = cur && v.p ? v.p.split(',').map((x) => x.split(':').map((n) => parseInt(n, 10))) : null;
   S.pendingSel = sel && sel.length && sel.every((it) => it.length === 2 && it.every((n) => Number.isInteger(n) && n >= 0)) ? sel : null;
   S.picks = picks;
+  S.freePicks = frees;
   S.cur = cur;
   S.focus = cur && cur.i != null ? cur.i : picks.length ? picks[0] : null;
   if (cur && cur.kind === 'member') S.open.add(cur.i);
@@ -436,10 +441,9 @@ async function loadResult(id, token, note = '') {
   renderMore();
   setMore(false);
   renderFunnel();
-  $('#first-tip').hidden = !!store.get('uc.tip1', '');   // 사용법 말풍선은 이 브라우저에서 처음 한 번만 (닫을 때까지)
   const want = parseView(location.hash);
   S.cueOn = false;                                     // 처음 여는 보기에는 "상세 ↓" 단추를 띄우지 않음
-  if (S.res.ranking.length || want.t) applyView(want);   // 주소에 보기가 없으면 1위
+  if (S.res.ranking.length || want.t || want.f) applyView(want);   // 주소에 보기가 없으면 1위
   else {
     renderRanking();
     $('#details').hidden = true;
@@ -944,6 +948,7 @@ function drawMarks() {
   if (!f || !host || !S.res) return;
   const m = S.yMode;
   const picked = new Set(S.picks.map((i) => i + 1));                // 순위 = 순위표 index + 1
+  const pickedKeys = new Set(S.freePicks.map((t) => t.key));        // 함께 고른 순위 밖 점
   const cur = S.cur;
   const hv = S.hover;
   const isCur = (k) => !!cur && (cur.kind === 'rank' ? k.rank === cur.t.rank : k.key != null && k.key === cur.key);
@@ -968,8 +973,8 @@ function drawMarks() {
         : `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${k.side === 'bad' ? C.bad : C.good}" opacity="${op}" ${cur_}/>`;
     if (k.rank && k.rank <= 10) s += `<text x="${(+x + 8).toFixed(1)}" y="${(+y - 7).toFixed(1)}" fill="${C.bad}" font-size="11" font-weight="600" opacity="${op}" pointer-events="none">${k.rank}</text>`;
     const here = isCur(k);
-    if (here && (S.picks.length > 1 || cur.kind !== 'rank')) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="${C.ring}" stroke-opacity="0.35" stroke-width="5" pointer-events="none"/>`;   // 아래 상세에 보이는 대상
-    if (k.rank != null && picked.has(k.rank)) s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ring}" stroke-width="2.2" pointer-events="none"/>`;
+    if (here && (nPicked() > 1 || cur.kind !== 'rank')) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="${C.ring}" stroke-opacity="0.35" stroke-width="5" pointer-events="none"/>`;   // 아래 상세에 보이는 대상
+    if ((k.rank != null && picked.has(k.rank)) || (k.rank == null && pickedKeys.has(k.key))) s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ring}" stroke-width="2.2" pointer-events="none"/>`;
     else if (here) s += `<circle cx="${x}" cy="${y}" r="8" fill="none" stroke="${C.ring}" stroke-width="1.8" stroke-dasharray="3 2" pointer-events="none"/>`;
     else if (hvRing(k)) s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ink}" stroke-width="1.3" pointer-events="none"/>`;
   }
@@ -1002,7 +1007,7 @@ function markTip(e) {
   showTip(lines.filter(Boolean).join('<br>'), e.clientX, e.clientY);
 }
 
-// 끌어서 고르기: 상자 안의 순위가 매겨진 점(그 순위에 포함된 점 포함)을 모두 고른다. Ctrl · ⌘ · Shift를 누르고 끌면 더한다
+// 끌어서 고르기: 상자 안의 점을 모두 고른다 (순위 · 그 순위에 포함된 점 · 순위 밖 점). Ctrl 또는 Shift를 누르고 끌면 더한다
 function bindBrush() {
   const sv = $('#funnel svg');
   const pos = (e) => { const r = sv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -1051,27 +1056,38 @@ function brushSelect(b) {
   const [xa, xb] = [Math.min(b.x0, b.x1), Math.max(b.x0, b.x1)];
   const [ya, yb] = [Math.min(b.y0, b.y1), Math.max(b.y0, b.y1)];
   const idx = new Set();
+  const frees = [];
   for (const k of S.res.funnel.marks) {
-    const r = k.rank || k.target;
-    if (!r || !drawn(k, m) || (S.follow === 'hide' && isFollow(k))) continue;
+    if (!drawn(k, m) || (S.follow === 'hide' && isFollow(k))) continue;
     const x = f.xs(k.n);
     const y = f.ys(k[m]);
-    if (x >= xa && x <= xb && y >= ya && y <= yb) idx.add(r - 1);
+    if (!(x >= xa && x <= xb && y >= ya && y <= yb)) continue;
+    const r = k.rank || k.target;
+    if (r) idx.add(r - 1);
+    else if (k.key) frees.push(k);                      // 순위 밖 점: good path · 신호 하나만 밖 · 묶이지 않은 점
   }
-  if (!idx.size) {
-    if (b.add) flashHint('고른 영역에 순위가 매겨진 점이 없습니다');
+  if (!idx.size && !frees.length) {
+    if (b.add) flashHint('고른 영역에 점이 없습니다');
     else clearPicks();
     return;
   }
+  frees.sort((a, c) => Math.abs(c.certainty ?? 0) - Math.abs(a.certainty ?? 0));   // 기준선에서 먼 것부터
   const list = [...idx].sort((a, c) => a - c);
-  S.focus = list[0];
-  setPicks(list, b.add);
-  revealRow(S.focus);
+  const had = b.add ? S.freePicks : [];
+  const add = frees.filter((k) => !had.some((x) => x.key === k.key)).map(tFree);
+  const keepCur = b.add && S.cur;
+  S.picks = [...new Set([...(b.add ? S.picks : []), ...list])].sort((a, c) => a - c);
+  S.freePicks = [...had, ...add];
+  if (!keepCur) S.cur = list.length ? tRank(list[0]) : S.freePicks[0] || null;
+  if (list.length) S.focus = list[0];
+  afterPicks();
+  if (list.length) revealRow(list[0]);
 }
 
 function clearPicks() {
-  if (!S.picks.length && !S.cur) return;
+  if (!S.picks.length && !S.freePicks.length && !S.cur) return;
   S.picks = [];
+  S.freePicks = [];
   S.focus = null;
   S.cur = null;
   afterPicks();
@@ -1147,7 +1163,7 @@ function renderRanking() {
       default: return cell(c, t, -1);
     }
   };
-  const multi = S.picks.length > 1;
+  const multi = nPicked() > 1;
   const curId = S.cur ? S.cur.id : null;
   const body = sortedRows().map(({ r, i }) => {
     const cls = [S.picks.includes(i) ? 'on' : '', multi && curId === 'r' + r.rank ? 'cur' : ''].join(' ').trim();
@@ -1158,7 +1174,7 @@ function renderRanking() {
     ? `<table class="rank rk"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
     : '<div class="muted" style="padding:10px">기준선을 넘은 혐의 대상이 없습니다.</div>';
   $('#rank-sub').textContent = S.res.ranking.length
-    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${multi ? ` · ${S.picks.length}개 고름` : ''}`
+    ? `${S.res.ranking.length}개 · ${hasBad ? '초과 bad' : 'N × ΔValue'} 순${S.picks.length > 1 ? ` · ${S.picks.length}개 고름` : ''}`
     : '';
 }
 
@@ -1201,8 +1217,26 @@ function targetTag(sp) {
 
 // 순위 밖 경로를 상세에서 본다. 고른 순위 · 비교 띠는 그대로 둔다
 function openFree(k) {
-  S.cur = tFree(k);
+  S.cur = S.freePicks.find((x) => x.key === k.key) || tFree(k);
   afterPicks();
+}
+
+// Ctrl · Shift를 누르고 순위 밖 점을 누르면 비교 띠에 더하거나 뺀다
+function toggleFree(k) {
+  const at = S.freePicks.findIndex((x) => x.key === k.key);
+  if (at < 0) {
+    S.cur = tFree(k);
+    S.freePicks = [...S.freePicks, S.cur];
+  } else dropFree(S.freePicks[at].id);
+  afterPicks();
+}
+
+// 함께 고른 순위 밖 경로 하나를 뺀다 (보던 것이면 다음 것 → 고른 순위 → 없음)
+function dropFree(id) {
+  const at = S.freePicks.findIndex((x) => x.id === id);
+  if (at < 0) return;
+  S.freePicks = S.freePicks.filter((x) => x.id !== id);
+  if (S.cur && S.cur.id === id) S.cur = S.freePicks[at] || S.freePicks[at - 1] || (S.picks.length ? tRank(S.picks[0]) : null);
 }
 
 // 순위 하나와 그 순위에 얽힌 대상: [순위, 묶인 대상…, 다른 STEP 탓 의심 대상]
@@ -1213,19 +1247,22 @@ function groupOf(i) {
   return out;
 }
 
-// 비교 띠에 나오는 대상 (고른 순위마다 그 순위와 얽힌 대상, 순위 순)
+// 비교 띠에 나오는 대상 (고른 순위마다 그 순위와 얽힌 대상, 순위 순 · 그 뒤에 함께 고른 순위 밖 경로)
 function stripItems() {
   const seen = new Set();
-  return S.picks.flatMap(groupOf).filter((t) => !seen.has(t.id) && seen.add(t.id)).slice(0, CMP_MAX);
+  return [...S.picks.flatMap(groupOf), ...S.freePicks].filter((t) => !seen.has(t.id) && seen.add(t.id)).slice(0, CMP_MAX);
 }
+const nPicked = () => S.picks.length + S.freePicks.length;   // 고른 것 수 (2개 이상이면 비교 띠)
 
 // list의 순위를 고른다(add면 더한다). cur = 상세에 보일 대상 (없으면 고른 것 중 순위가 가장 높은 것, 더할 때는 지금 보던 것 그대로)
 function setPicks(list, add = false, cur = null) {
   const next = new Set(add ? S.picks : []);
   for (const i of list) next.add(i);
   S.picks = [...next].sort((a, b) => a - b);
+  if (!add) S.freePicks = [];
+  const keep = add && S.cur && (S.cur.kind === 'free' ? S.freePicks.some((x) => x.id === S.cur.id) : S.picks.includes(S.cur.i));
   if (cur) S.cur = cur;
-  else if (!(add && S.cur && S.picks.includes(S.cur.i))) S.cur = S.picks.length ? tRank(list.length ? Math.min(...list) : S.picks[0]) : null;
+  else if (!keep) S.cur = S.picks.length ? tRank(list.length ? Math.min(...list) : S.picks[0]) : null;
   afterPicks();
 }
 
@@ -1256,21 +1293,22 @@ function focusMember(i, key, add = false) {
 function setFocus(t) {
   if (t.kind === 'member') S.open.add(t.i);
   S.cur = t;
-  S.focus = t.i;
+  if (t.kind !== 'free') S.focus = t.i;
   afterPicks();
-  revealRow(t.i, t.kind === 'member' ? t.key : null);
+  if (t.kind !== 'free') revealRow(t.i, t.kind === 'member' ? t.key : null);
 }
 
 // ◀ ▶: 하나만 골랐으면 순위를, 여러 개면 비교 띠의 대상을 차례로
 function stepTarget(d) {
   const sp = S.cur;
-  if (!sp || !S.res || sp.kind === 'free') return;
-  if (S.picks.length > 1) {
+  if (!sp || !S.res) return;
+  if (nPicked() > 1) {                                   // 여러 개 골랐으면 비교 띠 순서로 (순위 밖 경로 포함)
     const items = stripItems();
     const t = items[items.findIndex((x) => x.id === sp.id) + d];
     if (t) setFocus(t);
     return;
   }
+  if (sp.kind === 'free') return;
   const i = sp.i + d;
   if (i < 0 || i >= S.res.ranking.length) return;
   S.focus = i;
@@ -1304,7 +1342,7 @@ const cmpKey = (items) => S.runId + ':' + items.map((t) => t.id).join(',');
 
 async function renderStrip() {
   const box = $('#cmp');
-  if (!S.res || S.picks.length < 2) { box.hidden = true; return; }
+  if (!S.res || nPicked() < 2) { box.hidden = true; return; }
   box.hidden = false;
   const items = stripItems();
   const key = cmpKey(items);
@@ -1362,7 +1400,7 @@ function drawStrip(items, data) {
     if (!ov) return '';
     let v = null;
     let rank = null;
-    if (t.kind !== 'rank') { v = ov[j][rankAt(t.i)]; rank = S.res.ranking[t.i].rank; } else {
+    if (t.kind === 'member' || t.kind === 'cross') { v = ov[j][rankAt(t.i)]; rank = S.res.ranking[t.i].rank; } else {   // 순위 · 순위 밖 경로는 위쪽 순위와
       items.forEach((x, k) => {
         if (k < j && x.kind === 'rank' && ov[j][k] >= 0.5 && (v == null || ov[j][k] > v)) { v = ov[j][k]; rank = S.res.ranking[x.i].rank; }
       });
@@ -1372,9 +1410,10 @@ function drawStrip(items, data) {
   const val = (r, k) => (!r ? '…' : hasBad ? fmt.pct(r[k]) : fmt.num(r[k]));
   const body = items.map((t, j) => {
     const r = rows ? rows[j] : null;
-    const child = t.kind !== 'rank';
-    const no = child ? '<span class="sub-mark" aria-hidden="true">↳</span>' : `${S.res.ranking[t.i].rank}위`;
-    const tag = child ? (t.kind === 'member' ? '같은 웨이퍼' : '다른 STEP 의심') : '';
+    const free = t.kind === 'free';
+    const child = t.kind === 'member' || t.kind === 'cross';
+    const no = child ? '<span class="sub-mark" aria-hidden="true">↳</span>' : free ? '<span class="muted">–</span>' : `${S.res.ranking[t.i].rank}위`;
+    const tag = child ? (t.kind === 'member' ? '같은 웨이퍼' : '다른 STEP 의심') : free ? targetTag(t)[0] : '';
     return `<div class="cmp-row${child ? ' child' : ''}${t.id === curId ? ' cur' : ''}" role="row" tabindex="0" data-id="${esc(t.id)}" data-j="${j}" aria-current="${t.id === curId}">
       <div class="cmp-no" role="cell">${no}</div>
       <div class="cmp-name" role="cell" title="${esc(stepText(t.t) + '\n' + t.t.path)}">${stepTag(stepText(t.t), tag)}<div class="path">${pathHtml(t.t.parts || t.t.path.split(' → '))}</div></div>
@@ -1394,9 +1433,9 @@ function drawStrip(items, data) {
   const had = document.activeElement && document.activeElement.closest ? document.activeElement.closest('#cmp-body .cmp-row[data-id]') : null;
   const box = $('#cmp-body');
   box.innerHTML = `<div role="table" aria-label="고른 대상 비교">${axis}${body}</div>`
-    + (S.picks.flatMap(groupOf).length > items.length ? `<div class="muted small cmp-more">대상이 많아 앞의 ${CMP_MAX}개만 그렸습니다.</div>` : '');
+    + (S.picks.flatMap(groupOf).length + S.freePicks.length > items.length ? `<div class="muted small cmp-more">대상이 많아 앞의 ${CMP_MAX}개만 그렸습니다.</div>` : '');
   if (had) { const el = $(`.cmp-row[data-id="${CSS.escape(had.dataset.id)}"]`, box); if (el) el.focus({ preventScroll: true }); }
-  $('#cmp-sub').textContent = `${S.picks.length}개 순위 · ${items.length}개 대상 · ${hasBad ? 'bad 비율 = bad 웨이퍼 ÷ 웨이퍼' : 'y_value 평균'}`;
+  $('#cmp-sub').textContent = `${[S.picks.length ? `${S.picks.length}개 순위` : '', S.freePicks.length ? `순위 밖 ${S.freePicks.length}개` : ''].filter(Boolean).join(' · ')} · ${items.length}개 대상 · ${hasBad ? 'bad 비율 = bad 웨이퍼 ÷ 웨이퍼' : 'y_value 평균'}`;
 }
 
 // 비교 띠 한 줄의 수 (점 위에 올리면)
@@ -1406,8 +1445,8 @@ function stripTip(j, e) {
   const D = S.cmp && S.cmp.key === cmpKey(items) ? S.cmp.data : null;
   const r = D && D.targets[j];
   if (!t || !r) { hideTip(); return; }
-  const row = S.res.ranking[t.i];
-  const who = t.kind === 'rank' ? `${row.rank}위` : t.kind === 'member' ? `${row.rank}위에 묶인 대상` : `${row.rank}위 · 다른 STEP 탓 의심`;
+  const row = t.kind === 'free' ? null : S.res.ranking[t.i];
+  const who = t.kind === 'free' ? `${targetTag(t)[0]} · 순위 밖` : t.kind === 'rank' ? `${row.rank}위` : t.kind === 'member' ? `${row.rank}위에 묶인 대상` : `${row.rank}위 · 다른 STEP 탓 의심`;
   const v = (b, m) => (D.has_bad ? `bad ${fmt.pct(b)}` : `y_value 평균 ${fmt.num(m)}`);
   const diff = D.has_bad && r.bad != null && r.rest_bad != null ? `<br>차이 ${fmt.signed((r.bad - r.rest_bad) * 100, 1)}%p` : '';
   showTip(`<b>${who} · ${esc(t.t.step_name)} ${esc(t.t.path)}</b>`
@@ -1434,7 +1473,7 @@ function bindStrip() {
   body.addEventListener('mouseover', (e) => {
     const r = rowOf(e);
     const t = r ? itemOf(r) : null;
-    setHover(t ? { rank: S.res.ranking[t.i].rank, key: t.kind === 'rank' ? null : t.key } : null);
+    setHover(!t ? null : t.kind === 'free' ? { rank: -1, key: t.key } : { rank: S.res.ranking[t.i].rank, key: t.kind === 'rank' ? null : t.key });
   });
   body.addEventListener('mouseleave', () => { setHover(null); hideTip(); });
   body.addEventListener('mousemove', (e) => {
@@ -1447,6 +1486,7 @@ function bindStrip() {
 // ── 상세: 대상 하나를 크기를 고정한 2 × 2로 ─────────────────────────────
 function resetDetail() {
   $('#detail-cue').hidden = true;
+  S.freePicks = [];
   if (S.panel) S.panel.el.remove();
   S.panel = null;
   S.cur = null;
@@ -1482,6 +1522,14 @@ function makePanel() {
   const el = $('#panel-tpl').content.firstElementChild.cloneNode(true);
   const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pEx: false, pScope: 'step', xMode: 'all', relOpen: false, seq: 0 };   // 보기 선택은 대상을 바꿔도 그대로
   $('[data-r=pexl]', el).textContent = `${exName()}로 보기`;
+  const exLab = $('[data-r=pexl]', el).closest('label');
+  exLab.addEventListener('mouseenter', () => {
+    const r = exLab.getBoundingClientRect();
+    const [title, text] = S.res.info.has_bad ? AXIS_TIP.ex : AXIS_TIP.dv;
+    showTip(`<b>${title}</b><svg viewBox="0 0 230 84" width="230" height="84">${axisTipSvg('ex')}</svg><div class="muted">${text}</div>`
+      + '<div class="muted" style="margin-top:4px">체크하지 않으면 세로축은 위 funnel에서 고른 축(종합 · y_value · bad 비율)을 따라갑니다.</div>', r.left, r.bottom - 8);
+  });
+  exLab.addEventListener('mouseleave', hideTip);
   $('[data-a=pex]', el).addEventListener('change', (e) => {   // 경로 비교 세로축: 체크하면 순위 기준, 아니면 위 funnel의 축
     p.pEx = e.target.checked;
     if (p.det) renderPeers(p);
@@ -1535,7 +1583,7 @@ function panelClick(p, e) {
   const a = e.target.closest('[data-a]');
   const act = a ? a.dataset.a : null;
   if (act === 'prev' || act === 'next') { stepTarget(act === 'prev' ? -1 : 1); return; }
-  if (act === 'close') { if (p.spec.kind !== 'free') togglePick(p.spec.i); return; }
+  if (act === 'close') { if (p.spec.kind === 'free') { dropFree(p.spec.id); afterPicks(); } else togglePick(p.spec.i); return; }
   if (act === 'link') { copyView(); return; }
   if (act === 'wcsv') { if (p.det) waferCsv(p); return; }
   if (act === 'reset') { p.sel = p.spec.items.map((x) => x.slice()); loadPanel(p); return; }
@@ -1619,19 +1667,19 @@ function renderHead(p) {
   const free = sp.kind === 'free';
   const row = free ? null : S.res.ranking[sp.i];
   const t = sp.t;
-  const multi = S.picks.length > 1;                     // 하나만 골랐으면 ◀ ▶로 순위를, 여러 개면 비교 띠의 대상을 넘긴다
+  const multi = nPicked() > 1;                          // 하나만 골랐으면 ◀ ▶로 순위를, 여러 개면 비교 띠의 대상을 넘긴다
   const items = multi ? stripItems() : [];
   const at = items.findIndex((x) => x.id === sp.id);
   const [prev, next, close] = ['prev', 'next', 'close'].map((a) => $(`[data-a=${a}]`, p.el));
-  close.hidden = !multi || free;
-  prev.disabled = free || (multi ? at <= 0 : sp.i === 0);
-  next.disabled = free || (multi ? at < 0 || at >= items.length - 1 : sp.i >= S.res.ranking.length - 1);
+  close.hidden = !multi || (free && !S.freePicks.some((x) => x.id === sp.id));
+  prev.disabled = multi ? at <= 0 : free || sp.i === 0;
+  next.disabled = multi ? at < 0 || at >= items.length - 1 : free || sp.i >= S.res.ranking.length - 1;
   for (const [b, w] of [[prev, '이전'], [next, '다음']]) {
     const l = `${w} ${multi ? '대상' : '순위'}`;
     b.title = `${l} (${w === '이전' ? '←' : '→'} 키)`;
     b.setAttribute('aria-label', l);
   }
-  $('[data-r=count]', p.el).textContent = free ? '순위 밖' : multi ? (at >= 0 ? `고른 대상 ${at + 1} / ${items.length}` : '') : `순위 ${row.rank} / ${S.res.ranking.length}`;
+  $('[data-r=count]', p.el).textContent = multi && at >= 0 ? `고른 대상 ${at + 1} / ${items.length}` : free ? '순위 밖' : multi ? '' : `순위 ${row.rank} / ${S.res.ranking.length}`;
   const [tag, tcls] = targetTag(sp);
   const dh = $('[data-r=dh]', p.el);
   dh.innerHTML = `<span class="concl-tag${tcls ? ' ' + tcls : ''}">${tag}</span><span class="t">${esc(t.step_name)}</span>${t.desc ? `<span class="muted">· ${esc(t.desc)}</span>` : ''}`;
@@ -1924,7 +1972,7 @@ function renderPeers(p) {
   s += '</g>';
   const tick = (v) => (m === 'bz' ? Math.round(v * 100) + '%' : m === 'ex' && D.has_bad && v ? fmt.signed(v) : fmt.tick(v));
   const yt = m === 'judg' ? [] : linTicks(lo, hi, 4).map((v) => ({ v, l: tick(v) }));
-  s += axes({ L, R, T, B, xs, ys, xt, yt, xl: '웨이퍼 수', yl: m === 'ex' ? (D.has_bad ? '초과 bad (장)' : 'N × ΔValue') : P_AXIS[m], yo: 42 });
+  s += axes({ L, R, T, B, xs, ys, xt, yt, xl: '웨이퍼 수', yl: m === 'ex' ? (D.has_bad ? '초과 bad (웨이퍼 수)' : 'N × ΔValue') : P_AXIS[m], yo: 42 });
   // 점: 기준선 안(회색 · 이 신호만 보면 밖이면 테두리) → 따라 올라온 점(상속 3 · 하위 기인 4: 속 빈 원) → 원인 후보(1)와 좋은 쪽(2) → 지금 선택.
   // 크기는 모두 같다
   const fol = (f) => f === 3 || f === 4;
@@ -2420,7 +2468,7 @@ function bindFunnel() {
     const c = e.target.closest('circle[data-i]');
     const k = c ? S.res.funnel.marks[+c.dataset.i] : null;
     const r = k ? k.rank || k.target : null;
-    if (!r && k) { openFree(k); return; }              // 순위 · 묶음이 없는 점: 고른 순위는 그대로 두고 그 경로를 상세에서 본다
+    if (!r && k) { if (add) toggleFree(k); else openFree(k); return; }   // 순위 · 묶음이 없는 점: 고른 것은 그대로 두고 그 경로를 상세에서 (Ctrl · Shift면 비교 띠에 더하기)
     if (!r) {                                         // 빈 곳을 누르면 선택을 푼다
       const box = fsv.getBoundingClientRect();
       const x = e.clientX - box.left;
@@ -2515,7 +2563,6 @@ function init() {
   });
   $('#setup-close').addEventListener('click', () => setSetup(false));
   $('#more-btn').addEventListener('click', () => setMore($('#concl-more').hidden));
-  $('#first-tip-ok').addEventListener('click', () => { store.set('uc.tip1', '1'); $('#first-tip').hidden = true; });
   $('#meta-flags').addEventListener('click', (e) => { if (e.target.closest('[data-more]')) setMore(true); });
   $('#concl-body').addEventListener('click', (e) => {   // "+n 같은 웨이퍼": 순위표에서 1위의 묶인 대상 줄을 펼쳐 보여 준다
     if (!e.target.closest('.grp[data-concl]') || !S.res) return;

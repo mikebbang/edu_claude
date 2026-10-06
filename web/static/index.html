@@ -155,17 +155,6 @@
           <div class="vp-foot muted small">경로 비교에도 같이 적용 · 고른 값은 이 브라우저에 기억합니다</div>
         </div>
         <div class="chart" id="funnel"><canvas></canvas><svg role="img" aria-label="funnel 차트"></svg>
-          <!-- 처음 한 번만: 사용법 (닫으면 이 브라우저에서는 다시 안 나옴 · 제목 옆 ⓘ에 같은 설명) -->
-          <div class="first-tip" id="first-tip" role="note" hidden>
-            <b>이렇게 씁니다</b>
-            <ul>
-              <li>점을 누르면 그 순위(순위가 없는 점은 그 경로)를 아래 상세에서 봅니다.</li>
-              <li>빈 곳에서 끌면 여러 순위를 한꺼번에 고르고, Ctrl · ⌘ · Shift를 누르면 더해 고릅니다. 빈 곳을 누르면 풀립니다.</li>
-              <li>순위표 줄을 눌러도 되고, ← → 키로 순위를 넘깁니다.</li>
-              <li>상세의 칸이나 경로 칩을 누르면 경로를 바꿔 봅니다.</li>
-            </ul>
-            <button type="button" class="mini" id="first-tip-ok">알겠어요</button>
-          </div>
         </div>
         <div class="legend" id="funnel-legend"></div>
       </div>
@@ -242,7 +231,7 @@
       <div class="sub cell">
         <div class="sub-head"><h3>경로 비교</h3><span class="grow"></span>
           <span class="seg small" data-r="sseg" role="group" aria-label="비교 범위"><button type="button" data-v="step" class="on" title="이 STEP에서 계산한 모든 경로 (위 funnel을 이 STEP만 걸러 본 것)">STEP 전체</button><button type="button" data-v="same" title="지금 고른 Order들을 다른 Unit으로 지난 경로">같은 Order</button></span>
-          <label class="chk small" title="체크하지 않으면 세로축은 위 funnel에서 고른 축(종합 · y_value · bad 비율)을 따라갑니다"><input type="checkbox" data-a="pex"><span data-r="pexl">초과 bad로 보기</span></label>
+          <label class="chk small"><input type="checkbox" data-a="pex"><span data-r="pexl">초과 bad로 보기</span></label>
         </div>
         <div class="muted small paxis" data-r="paxis"></div>
         <div class="legend pcap" data-r="pcap"></div>
