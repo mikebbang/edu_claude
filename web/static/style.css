@@ -186,6 +186,8 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .seg button.on { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
 .seg button:disabled, .seg button.off { opacity: 0.4; background: none; color: var(--ink2); }
 .seg.small button { height: 26px; padding: 0 8px; font-size: 12px; }
+.seg.icons button { display: inline-grid; place-items: center; padding: 0 7px; }   /* 그림 버튼 (띠 전체 · 점 위주) */
+.seg.icons .ico-sm { margin: 0; width: 17px; height: 17px; }
 .chart { position: relative; height: 430px; }
 .chart canvas, .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 #funnel svg { cursor: crosshair; touch-action: none; user-select: none; }
