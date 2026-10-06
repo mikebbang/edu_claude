@@ -105,18 +105,24 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .q-x { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; flex: none; }
 .q-x:hover { background: var(--card); border: 0; color: var(--accent); }
 .opt-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-/* 결과가 나오면 한 줄로 접힌 설정 */
-.setup-mini { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.mini-src { display: inline-flex; align-items: center; gap: 7px; flex: none; padding: 6px 12px; border-radius: 10px; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-line); }
-.mini-src svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.mini-set { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setup-close { float: right; height: 28px; margin: -2px -4px 0 8px; font-size: 12px; }
 /* 연 결과가 없을 때 최근 실행 */
 .recent-list { max-height: none; }
 .recent-list tbody tr:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-/* 결론 한 줄 */
+/* 결론: 두 줄 + 아래 회색 한 줄(데이터 · 판정 숫자 · 설정) + 자세히 */
 .concl { display: flex; align-items: flex-start; gap: 12px; border-left: 4px solid var(--ring); }
-.concl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.concl-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.concl-body { display: flex; flex-direction: column; gap: 4px; }
+.concl-main .grp { align-self: center; }
+.concl-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink2); }
+.meta-src { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 600; }
+.meta-src svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#meta-flags { display: inline-flex; gap: 6px; }
+#meta-flags:empty { display: none; }
+button.flag { height: 22px; padding: 0 8px; border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-bg); border: 1px solid var(--accent-line); }
+button.flag.warn { color: var(--warn); background: var(--hover); border-color: var(--line); }
+.meta-btns { margin-left: auto; display: inline-flex; gap: 2px; }   /* 좁아서 줄이 바뀌어도 두 버튼은 함께 오른쪽에 */
+.concl-more { margin-top: 4px; font-size: 13px; }
 .concl-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 15px; }
 .concl-tag { display: inline-block; padding: 1px 8px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); font-size: 12px; font-weight: 700; }
 .concl-stat { font-size: 14px; }
@@ -300,24 +306,27 @@ table.hist .del:hover { color: var(--bad); background: var(--bad-bg); }
 .panel.loading { opacity: .55; }
 .panel.rel { border-style: dashed; border-color: var(--ring); }
 .detail-head { display: flex; align-items: center; gap: 6px; }
-.dh { flex: 1; min-width: 0; }
+.dh { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.dtitle { display: inline-flex; align-items: baseline; gap: 6px; }
 .dh .t { font-size: 15px; font-weight: 600; }
+.dh .chips .arr { align-self: center; color: var(--muted); }
+.dh .badge { margin-left: 0; }
 .dnav { display: inline-flex; align-items: center; gap: 2px; flex: none; }
 .dcount { min-width: 70px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.gsw-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0 2px; }
+.dstat-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0 10px; }
+.gsw-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .gsw { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; }
 .gsw button { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dstat { margin: 6px 0 8px; color: var(--ink2); }
+.dstat { color: var(--ink2); }
 .dstat b { color: var(--ink); font-weight: 600; }
 .badtxt { color: var(--bad); font-weight: 600; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--hover); color: var(--warn); font-size: 12px; margin-left: 6px; }
-.sel-row { margin-bottom: 10px; }
 .chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--bad-bg); color: var(--bad); border: 0; }
 .chip:hover { background: var(--bad-bg); filter: brightness(0.97); }
 .related { border: 1px solid var(--accent-line); border-radius: var(--radius); padding: 10px 12px 12px; margin-bottom: 12px; background: color-mix(in srgb, var(--accent-bg) 55%, var(--card)); }
 .rel-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 2px 0 6px; }
-.rel-head + .rel-cross, .rel-why + .rel-head { margin-top: 10px; }
+.rel-head + .rel-cross, .rel-wrap + .rel-head { margin-top: 10px; }
 .rel-wrap { overflow-x: auto; }
 table.rel th { position: static; background: transparent; cursor: default; }
 table.rel tr { cursor: default; }
@@ -326,7 +335,6 @@ table.rel tr.rep td { font-weight: 500; }
 table.rel tbody tr.cur, table.rel tbody tr.cur:hover { background: var(--accent-bg); }
 table.rel td.diff { white-space: normal; min-width: 190px; }
 table.rel .tag { margin-left: 0; color: var(--accent); background: var(--accent-bg); }
-.rel-why { margin-top: 6px; }
 .rel-cross { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .grid-2x2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .sub { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; min-width: 0; background: var(--card); }

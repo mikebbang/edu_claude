@@ -68,11 +68,7 @@
 
 <main class="page">
   <section class="card setup" id="setup" aria-label="실행 설정">
-    <!-- 결과가 나오면 한 줄로 접는다: 지금 결과의 데이터 · 설정 · [설정 바꾸기] -->
-    <div class="setup-mini" id="setup-mini" hidden>
-      <span class="mini-src" id="mini-src"></span><span class="muted mini-set" id="mini-set"></span><span class="grow"></span>
-      <button type="button" class="ghost" id="setup-open" aria-expanded="false">설정 바꾸기 ▾</button>
-    </div>
+    <!-- 결과가 나오면 이 카드는 숨기고, 결론 카드 아래 한 줄의 [설정 바꾸기]로 다시 연다 -->
     <div class="setup-full" id="setup-full">
     <button type="button" class="ghost setup-close" id="setup-close" hidden>접기 ▴</button>
     <!-- 데이터: Job ID를 넣거나(DB에서 가져옴) 왼쪽 csv로 raw.csv를 붙인다. 붙인 파일이 있으면 그 파일로 실행 -->
@@ -128,10 +124,17 @@
 
   <section id="results" hidden>
     <div class="card concl" id="concl" aria-label="결론">
-      <div class="concl-body" id="concl-body"></div>
+      <div class="concl-col">
+        <div class="concl-body" id="concl-body"></div>
+        <!-- 데이터 · 판정 숫자 · 설정 한 줄. 자세히 = 실행 · 데이터 세부 · 보정 · 확인할 점 · 판정 정보, 설정 바꾸기 = 위에 설정 카드를 연다 -->
+        <div class="concl-meta" id="concl-meta">
+          <span class="meta-src" id="meta-src"></span><span id="meta-text"></span><span id="meta-flags"></span>
+          <span class="meta-btns"><button type="button" class="ghost mini" id="more-btn" aria-expanded="false" aria-controls="concl-more">자세히 ▾</button><button type="button" class="ghost mini" id="setup-open" aria-expanded="false">설정 바꾸기 ▾</button></span>
+        </div>
+        <div class="summary concl-more" id="concl-more" hidden></div>
+      </div>
       <button type="button" class="ghost mini" id="concl-copy" title="결론 문장을 복사해 회의 · 메신저에 붙여 넣기">복사</button>
     </div>
-    <div class="card summary" id="summary"></div>
     <div class="grid-main">
       <div class="card">
         <div class="card-head">
@@ -182,8 +185,13 @@
 <!-- 상세 카드 (지금 보는 대상 하나) -->
 <template id="panel-tpl">
   <article class="card panel">
+    <!-- 머리 두 줄: [순위 · STEP · 경로 칩 (탐색 중이면 원래 경로로)] · [숫자 · 같은 웨이퍼 묶음 · 비교표] -->
     <div class="detail-head">
-      <div class="dh" data-r="dh"></div>
+      <div class="dh">
+        <span class="dtitle" data-r="dh"></span><span class="chips" data-r="chips"></span>
+        <span class="badge" data-r="explore" hidden>탐색 중 (판정 아님)</span>
+        <button type="button" class="ghost" data-a="reset" hidden><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>원래 경로로</button>
+      </div>
       <div class="dnav">
         <button type="button" class="ghost icon-only" data-a="prev" aria-label="이전 순위" title="이전 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <span class="dcount muted small" data-r="count"></span>
@@ -191,11 +199,10 @@
       </div>
       <button type="button" class="ghost close icon-only" data-a="close" aria-label="이 순위를 고른 것에서 빼기" title="이 순위를 고른 것에서 빼기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-    <div class="gsw-row" data-r="group" hidden></div>
-    <div class="dstat" data-r="dstat">불러오는 중…</div>
-    <div class="row sel-row">
-      <span class="chips" data-r="chips"></span>
-      <button type="button" class="ghost" data-a="reset"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>원래 경로로</button>
+    <div class="dstat-row">
+      <div class="dstat" data-r="dstat">불러오는 중…</div><span class="grow"></span>
+      <div class="gsw-row" data-r="group" hidden></div>
+      <button type="button" class="ghost mini" data-a="rel" aria-expanded="false" hidden>비교표 ▸</button>
     </div>
     <div class="related" data-r="related" hidden></div>
     <div class="grid-2x2">

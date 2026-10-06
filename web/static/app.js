@@ -144,6 +144,8 @@ const HELP = {
   fview_pts: '점 위주: 점이 모인 곳을 크게 보여 줍니다. 점끼리의 차이가 잘 보이지만 띠 양 끝은 잘릴 수 있습니다.',
   follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
   rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
+  relwhy: '웨이퍼가 거의 같은(설정한 비율 이상, 기본 90%) 대상은 순위표에 한 줄로 묶습니다. 대표는 순위 기준값(초과 bad, good_bad가 없으면 N × ΔValue)이 큰 쪽이고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)입니다. 겹침이 100%면 데이터로는 어느 STEP 탓인지 가릴 수 없고, 100%보다 작으면 \'서로 다른 웨이퍼\'의 bad가 차이를 만듭니다.',
+  crosswhy: '이 경로에서 아래 경로를 지난 웨이퍼를 빼면 차이가 사라지고, 아래 경로는 이 경로의 웨이퍼를 빼도 기준선을 넘습니다. 그래서 진짜 원인은 아래 경로일 수 있습니다.',
   sig: '이 축의 신호 하나만 보면 기준선 밖이지만, 두 신호를 합친 판정(종합)에서는 기준선 안이라 혐의 대상이 아닌 경로입니다. 예: y_value는 꽤 높은데 bad는 평소와 같은 경로. 판정에 쓰는 것은 종합이라 순위에 오르지 않습니다.',
   cmp: '빨간 점 = 이 경로, 회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼. 두 점이 멀수록 이 경로만 나쁩니다. 겹침 = 위쪽 순위와 웨이퍼가 겹치는 비율(50% 이상만 표시).',
 };
@@ -364,7 +366,9 @@ async function loadResult(id, token, note = '') {
   const jobs = S.res.info.data.job_ids || [];
   $('#topnote').textContent = `${jobs.length ? `JOB ID : ${jobs[0]}${jobs.length > 1 ? ` 외 ${jobs.length - 1}개` : ''} · ` : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
   renderConcl();
-  renderSummary();
+  renderMeta();
+  renderMore();
+  setMore(false);
   renderFunnel();
   if (S.res.ranking.length) {
     S.focus = 0;
@@ -386,26 +390,41 @@ function hideResults() {
   syncEmpty();
 }
 
-// 설정 카드: 결과가 있으면 한 줄 요약(데이터 · 설정 · [설정 바꾸기])으로 접고, 없으면 펼친다
+// 설정 카드: 결과가 있으면 숨기고(데이터 · 설정은 결론 카드 아래 한 줄), 그 줄의 [설정 바꾸기]로 결론 위에 펼친다. 결과가 없으면 늘 펼친다
 const ICON_INFO = '<svg class="ico-info" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.6v.1"/></svg>';   // ⓘ 글자는 PC마다 다른 글꼴로 그려져서 그림으로
 const ICON_FILE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>';
 const ICON_DB = '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7" ry="2.8"/><path d="M5 5.5v13c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8v-13"/><path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"/></svg>';
 function setSetup(open) {
   const full = open || !S.res;
-  $('#setup-full').hidden = !full;
-  $('#setup-mini').hidden = full;
+  $('#setup').hidden = !full;
   $('#setup-close').hidden = !(S.res && full);
-  $('#setup-open').setAttribute('aria-expanded', String(full));
-  if (!full) renderMini();
+  const b = $('#setup-open');
+  b.setAttribute('aria-expanded', String(full));
+  b.textContent = `설정 바꾸기 ${full ? '▴' : '▾'}`;
 }
 
-function renderMini() {
+// 결론 카드 아래 한 줄: 데이터 · 판정 숫자 · 설정. 보정 · 확인할 점이 있으면 그 수(누르면 자세히)
+function renderMeta() {
+  const I = S.res.info;
+  const d = I.data;
+  const j = I.judge;
   const v = S.runs.find((x) => x.id === S.runId);
-  const st = settingsText(v ? v.settings : settings());
+  const st = settingsText(I.settings);
   const job = v ? v.job_source : null;
   const name = v ? (job ? `job ${job}` : v.file_name || 'raw.csv') : S.fileId ? $('#q-file-name').textContent : `job ${$('#job_id').value}`;
-  $('#mini-src').innerHTML = `${job ? ICON_DB : ICON_FILE}<b>${esc(name)}</b>`;
-  $('#mini-set').textContent = st.main + (st.extra ? ' · ' + st.extra : '');
+  $('#meta-src').innerHTML = `${job ? ICON_DB : ICON_FILE}${esc(name)}`;
+  $('#meta-text').textContent = [`${fmt.int(d.wafers)}장`, d.bad_rate != null ? `bad ${fmt.pct(d.bad_rate)}` : '',
+    `조합 ${fmt.int(j.combos)}개 → 기준선 밖 ${fmt.int(j.over)}개`, st.main, st.extra].filter(Boolean).join(' · ');
+  const nFix = fixNotes(I).length;
+  $('#meta-flags').innerHTML = (nFix ? `<button type="button" class="flag" data-more>보정 ${nFix}개</button>` : '')
+    + (I.warnings.length ? `<button type="button" class="flag warn" data-more>확인할 점 ${I.warnings.length}개</button>` : '');
+}
+
+function setMore(open) {
+  $('#concl-more').hidden = !open;
+  const b = $('#more-btn');
+  b.setAttribute('aria-expanded', String(open));
+  b.textContent = `자세히 ${open ? '▴' : '▾'}`;
 }
 
 // 결론: 1위를 한 문장으로 (복사해 회의 · 메신저에 붙여 쓰도록 같은 내용을 글로도 만들어 둔다)
@@ -417,24 +436,24 @@ function renderConcl() {
   const pre = job ? `[job ${job}] ` : '';
   if (!R.length) {
     $('#concl-body').innerHTML = `<div class="concl-main">기준선을 넘은 혐의 대상이 없습니다</div>
-      <div class="muted small">조합 ${fmt.int(I.judge.combos)}개를 검사했습니다. MIN_N을 낮추거나 MAX_DEPTH를 늘려 다시 볼 수 있습니다.</div>`;
+      <div class="muted small">MIN_N을 낮추거나 MAX_DEPTH를 늘려 다시 볼 수 있습니다.</div>`;
     S.conclText = `${pre}기준선을 넘은 혐의 대상 없음 (조합 ${I.judge.combos}개 검사)`;
     return;
   }
   const r = R[0];
   const vmu = (S.res.funnel.bounds.yz || S.res.funnel.bounds.mean || {}).mid;   // 전체 y_value 평균 (예전 기록은 mean 축에 있음)
   const cert = r.certainty == null ? '–' : r.certainty.toFixed(2);
-  const stat = hasBad ? `웨이퍼 <b>${fmt.int(r.n)}장</b> 중 bad <b class="badtxt">${fmt.pct(r.bad)}</b> (예상 ${fmt.pct(r.exp_bad)}) → 예상보다 <b>${fmt.int(r.excess)}장</b> 더 bad`
-    : `웨이퍼 <b>${fmt.int(r.n)}장</b>의 y_value 평균 <b>${fmt.num(r.vmean)}</b> (전체 ${fmt.num(vmu)})`;
+  const stat = hasBad ? `<b>${fmt.int(r.n)}장</b> 중 bad <b class="badtxt">${fmt.pct(r.bad)}</b> (예상 ${fmt.pct(r.exp_bad)}) · <b>${fmt.int(r.excess)}장</b> 더 bad`
+    : `<b>${fmt.int(r.n)}장</b>의 y_value 평균 <b>${fmt.num(r.vmean)}</b> (전체 ${fmt.num(vmu)})`;
   const statT = hasBad ? `${r.n}장 중 bad ${fmt.pct(r.bad)} (예상 ${fmt.pct(r.exp_bad)}), 예상보다 ${Math.round(r.excess)}장 더 bad`
     : `${r.n}장의 y_value 평균 ${fmt.num(r.vmean)} (전체 ${fmt.num(vmu)})`;
   const others = R.slice(1, 3).map((x) => `${x.rank}위 ${x.step_name} ${x.path} (${hasBad ? `초과 bad ${fmt.signed(x.excess)}장` : `N × ΔValue ${fmt.num(x.excess)}`})`);
+  const short = R.slice(1, 3).map((x) => `${x.rank}위 ${x.step_name} ${x.path} (${hasBad ? `${fmt.signed(x.excess)}장` : `N × ΔValue ${fmt.num(x.excess)}`})`);
   const more = R.length > 3 ? ` 외 ${R.length - 3}개` : '';
-  const merged = r.merged.length ? ` · 웨이퍼가 같은 대상 ${r.merged.length}개가 1위 줄에 묶여 있습니다(순위표의 "+${r.merged.length} 같은 웨이퍼"나 상세의 묶음 버튼으로 봄)` : '';
+  const grp = r.merged.length ? `<button type="button" class="grp" data-concl title="웨이퍼가 거의 같아 1위 줄에 묶인 대상 ${r.merged.length}개 · 누르면 순위표에서 펼칩니다">+${r.merged.length} 같은 웨이퍼 ▾</button>` : '';
   $('#concl-body').innerHTML = `<div class="concl-main"><span class="concl-tag">1위</span><b>${esc(r.step_name)}</b>${r.desc ? `<span class="muted"> · ${esc(r.desc)}</span>` : ''}
-      <span class="path inline">${pathHtml(r.parts)}</span></div>
-    <div class="concl-stat">${stat} · <span class="help-term" data-help="certainty">Certainty</span> ${cert}</div>
-    <div class="muted small">혐의 대상 ${R.length}개${others.length ? ' · ' + esc(others.join(' · ')) + more : ''}${merged}</div>`;
+      <span class="path inline">${pathHtml(r.parts)}</span>${grp}</div>
+    <div class="concl-stat">${stat} · <span class="help-term" data-help="certainty">Certainty</span> ${cert}${short.length ? ` <span class="muted small">· ${esc(short.join(' · ')) + more}</span>` : ''}</div>`;
   S.conclText = `${pre}1위 ${r.step_name}${r.desc ? ` (${r.desc})` : ''} ${r.path}: ${statT}, Certainty ${cert}.`
     + (R.length > 1 ? ` 혐의 대상 ${R.length}개: ${others.join(', ')}${more}.` : '');
 }
@@ -535,6 +554,7 @@ async function refreshRuns(auto = false) {
       S.db = !!r.db;
       syncDb();
       renderHistory();
+      if (S.res) renderMeta();
       ok = true;
     } catch {
       // 목록을 못 읽으면 다음 차례에 다시
@@ -638,22 +658,29 @@ function setSeg(el, v) {
 }
 
 // ── 요약 ───────────────────────────────────────────────────────────────
-function renderSummary() {
+// 보정한 내용: Value 치우침 · part 맞춤 (prepare)과 z 퍼짐 배수
+function fixNotes(I) {
+  const notes = [...I.notes];
+  if (I.judge.spread > 1) notes.push(`z가 이론보다 ${I.judge.spread.toFixed(2)}배 퍼짐 → 기준선도 ${I.judge.spread.toFixed(2)}배로`);
+  return notes;
+}
+
+// 자세히: 결론 아래 한 줄에 없는 것 (실행 · 데이터 세부 · 보정 · 확인할 점 · 판정 정보). 보정 · 확인할 점은 있을 때만
+function renderMore() {
   const I = S.res.info;
   const d = I.data;
   const j = I.judge;
-  const notes = [...I.notes];
-  if (j.spread > 1) notes.push(`z가 이론보다 ${j.spread.toFixed(2)}배 퍼짐 → 기준선도 ${j.spread.toFixed(2)}배로`);
+  const notes = fixNotes(I);
   const st = I.settings;
   const groups = j.groups.map((g) => `<tr><td>Order ${esc(g.name)}</td><td class="num">${fmt.int(g.possible)}</td><td class="num">${g.z == null ? '–' : g.z.toFixed(2)}</td><td class="num">${g.z_spread == null ? '–' : g.z_spread.toFixed(2)}</td></tr>`).join('');
   const line = (label, html, cls = '') => `<div class="kv${cls ? ' ' + cls : ''}"><b>${label}</b><span>${html}</span></div>`;
   const v = S.runs.find((x) => x.id === S.runId);
   const jobs = d.job_ids || [];
-  $('#summary').innerHTML = [
-    line('실행', `job_id ${jobs.length ? esc(jobs.join(', ')) : '–'} · analysis_date ${esc((d.analysis_dates || []).join(', ') || '–')}${v ? ` · ${esc(v.file_name || '')} · ${when(v.created, true)} 실행` : ''}`),
-    line('데이터', `웨이퍼 ${fmt.int(d.wafers)}장${d.n_excluded ? ` (good_bad N 등 ${fmt.int(d.n_excluded)}장은 계산에서 뺌)` : ''} · lot ${fmt.int(d.lots)}개 · STEP ${fmt.int(d.steps)}개 (STEP SEQ ${fmt.int(d.step_seqs)}개)${d.bad_rate != null ? ` · bad 비율 ${fmt.pct(d.bad_rate)}` : ''}`),
-    line('보정', notes.length ? esc(notes.join(' · ')) : '필요 없음'),
-    line('판정', `조합 ${fmt.int(j.combos)}개 검사 (가능한 ${fmt.int(j.possible)}개 중) → 기준선 밖 ${fmt.int(j.over)}개 → 혐의 대상 ${fmt.int(j.targets)}개 · ${I.timings.total}초`),
+  $('#concl-more').innerHTML = [
+    line('실행', `job_id ${jobs.length ? esc(jobs.join(', ')) : '–'} · analysis_date ${esc((d.analysis_dates || []).join(', ') || '–')}${v ? ` · ${when(v.created, true)} 실행` : ''} · ${I.timings.total}초`),
+    line('데이터', [d.n_excluded ? `good_bad N 등 ${fmt.int(d.n_excluded)}장은 계산에서 뺌` : '', `lot ${fmt.int(d.lots)}개`,
+      `STEP ${fmt.int(d.steps)}개 (STEP SEQ ${fmt.int(d.step_seqs)}개)`, `가능한 조합 ${fmt.int(j.possible)}개`].filter(Boolean).join(' · ')),
+    notes.length ? line('보정', esc(notes.join(' · '))) : '',
     I.warnings.length ? line('확인할 점', esc(I.warnings.join(' · ')), 'warn') : '',
     `<details><summary>판정 정보</summary>
       <table><tr><th>묶음</th><th class="num">가능한 조합</th><th class="num">기본 기준 z</th><th class="num">기준 z (퍼짐 반영)</th></tr>${groups}</table>
@@ -1327,7 +1354,7 @@ function showPanel() {
 
 function makePanel() {
   const el = $('#panel-tpl').content.firstElementChild.cloneNode(true);
-  const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pMode: 'judg', pScope: 'step', xMode: 'all', seq: 0 };   // 보기 선택은 대상을 바꿔도 그대로
+  const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pMode: 'judg', pScope: 'step', xMode: 'all', relOpen: false, seq: 0 };   // 보기 선택은 대상을 바꿔도 그대로
   const size = $('[data-a=size]', el);
   size.value = S.ptSize;
   size.addEventListener('input', () => {
@@ -1390,6 +1417,7 @@ function panelClick(p, e) {
   if (act === 'close') { togglePick(p.spec.i); return; }
   if (act === 'wcsv') { if (p.det) waferCsv(p); return; }
   if (act === 'reset') { p.sel = p.spec.items.map((x) => x.slice()); loadPanel(p); return; }
+  if (act === 'rel') { p.relOpen = !p.relOpen; renderRelated(p); return; }
   const g = e.target.closest('[data-gid]');                // 묶음 버튼 · 묶인 대상 표의 "보기"
   if (g) {
     const t = groupOf(p.spec.i).find((x) => x.id === g.dataset.gid);
@@ -1455,7 +1483,6 @@ function renderPanel(p) {
   if (!p.det || !S.res) return;
   renderHead(p);
   renderStat(p);
-  renderRelated(p);
   renderBlocks(p);
   renderScatter(p);
   renderPeers(p);
@@ -1480,12 +1507,27 @@ function renderHead(p) {
     b.setAttribute('aria-label', l);
   }
   $('[data-r=count]', p.el).textContent = multi ? (at >= 0 ? `고른 대상 ${at + 1} / ${items.length}` : '') : `순위 ${row.rank} / ${S.res.ranking.length}`;
-  const title = sp.kind === 'rank' ? `${row.rank}위` : sp.kind === 'member' ? `${row.rank}위에 묶인 대상` : `${row.rank}위 · 다른 STEP 탓 의심`;
-  const rel = sp.kind === 'rank' ? '' : ` · ${row.rank}위와 웨이퍼 ${fmt.pct(t.overlap, 0)} 겹침`;
-  $('[data-r=dh]', p.el).innerHTML = `<span class="t">${title} · STEP ${esc(stepText(t))}</span>
-    <span class="muted"> · ${sp.kind === 'rank' ? '원래 경로' : '경로'} ${esc(t.path)}${rel} · Certainty ${t.certainty == null ? '–' : t.certainty.toFixed(2)}</span>`;
+  const tag = sp.kind === 'rank' ? `${row.rank}위` : sp.kind === 'member' ? `${row.rank}위 묶음` : `${row.rank}위 · 다른 STEP 의심`;
+  const dh = $('[data-r=dh]', p.el);
+  dh.innerHTML = `<span class="concl-tag">${tag}</span><span class="t">${esc(t.step_name)}</span>${t.desc ? `<span class="muted">· ${esc(t.desc)}</span>` : ''}`;
+  dh.title = `${stepText(t)}\n${sp.kind === 'rank' ? '원래 경로' : '경로'} ${t.path}${sp.kind === 'rank' ? '' : ` · ${row.rank}위와 웨이퍼 ${fmt.pct(t.overlap, 0)} 겹침`}`;
   p.el.classList.toggle('rel', sp.kind !== 'rank');
+  renderChips(p);
   renderGroup(p);
+  renderRelated(p);
+}
+
+// 경로 칩: 상세를 불러왔으면 그 Order · Unit 이름으로, 대상을 막 바꿔 불러오는 중이면 순위표의 경로 이름으로.
+// 원래 경로가 아니면(칸 · 칩으로 바꿈) '탐색 중'과 [원래 경로로]가 보인다
+function renderChips(p) {
+  const orig = sameSel(p.sel, p.spec.items);
+  const D = p.det;
+  const sel = p.sel.slice().sort((a, b) => a[0] - b[0]);
+  const names = D && D.step === p.spec.step ? sel.map(([q, u]) => `${D.orders[q].name}:${D.orders[q].units[u].name}`) : orig ? p.spec.t.parts : null;
+  if (!names) return;
+  $('[data-r=chips]', p.el).innerHTML = sel.map(([q], k) => `${k ? '<span class="arr" aria-hidden="true">→</span>' : ''}<button type="button" class="chip" data-q="${q}" title="이 Order 빼기">${esc(names[k])} <span aria-hidden="true">×</span></button>`).join('');
+  $('[data-r=explore]', p.el).hidden = orig;
+  $('[data-a=reset]', p.el).hidden = orig;
 }
 
 // 묶음 버튼: 이 순위와 얽힌 대상(대표 · 같은 웨이퍼로 묶인 대상 · 다른 STEP 탓 의심)을 바꿔 본다
@@ -1495,9 +1537,12 @@ function renderGroup(p) {
   const g = groupOf(sp.i);
   if (g.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
   const rank = S.res.ranking[sp.i].rank;
+  const kinds = new Set(g.slice(1).map((x) => x.kind));
   const name = (x) => (g.filter((y) => y.t.step_name === x.t.step_name).length > 1 ? `${x.t.step_name} ${x.t.path}` : x.t.step_name);
-  const label = (x) => (x.kind === 'rank' ? `${name(x)} · 대표` : x.kind === 'member' ? `${name(x)} · 겹침 ${fmt.pct(x.t.overlap, 0)}` : `다른 STEP 의심 · ${name(x)}`);
-  box.innerHTML = `<span class="muted small">${rank}위 묶음</span><span class="seg small gsw" role="group" aria-label="${rank}위와 얽힌 대상">`
+  const label = (x) => (x.kind === 'rank' ? `${name(x)} · 대표` : x.kind === 'member' ? `${name(x)} · 겹침 ${fmt.pct(x.t.overlap, 0)}`
+    : `${kinds.size > 1 ? '다른 STEP 의심 · ' : ''}${name(x)} · 겹침 ${fmt.pct(x.t.overlap, 0)}`);
+  const what = kinds.size > 1 ? `${rank}위 묶음` : kinds.has('member') ? '같은 웨이퍼' : '다른 STEP 의심';
+  box.innerHTML = `<span class="muted small">${what}</span><span class="seg small gsw" role="group" aria-label="${rank}위와 얽힌 대상">`
     + g.map((x) => `<button type="button" data-gid="${esc(x.id)}" class="${x.id === sp.id ? 'on' : ''}" aria-pressed="${x.id === sp.id}" title="${esc(stepText(x.t) + '\n' + x.t.path)}">${esc(label(x))}</button>`).join('')
     + '</span>';
   box.hidden = false;
@@ -1507,17 +1552,11 @@ const sameSel = (a, b) => JSON.stringify([...a].sort((x, y) => x[0] - y[0])) ===
 
 function renderStat(p) {
   const D = p.det;
-  const orig = sameSel(p.sel, p.spec.items);
   const sel = D.selection;
-  $('[data-r=dstat]', p.el).innerHTML = `지금 선택 <b>${esc(sel.label)}</b> · 웨이퍼 <b>${fmt.int(sel.n)}</b>장`
-    + (D.has_bad ? ` · bad <span class="badtxt">${fmt.pct(sel.bad)}</span> (<span class="help-term" data-help="rest">같은 Order를 다른 Unit으로 지난</span> ${fmt.int(sel.rest_n)}장 ${fmt.pct(sel.rest_bad)})` : '')
-    + ` · y_value 평균 ${fmt.num(sel.vmean)} · <span class="help-term" data-help="certainty">Certainty</span> ${sel.certainty == null ? '–' : sel.certainty.toFixed(2)}`
-    + (orig ? '' : '<span class="badge">탐색 중 (판정 아님)</span>');
-  $('[data-r=chips]', p.el).innerHTML = p.sel.slice().sort((a, b) => a[0] - b[0]).map(([q, u]) => {
-    const o = D.orders[q];
-    return `<button type="button" class="chip" data-q="${q}" title="이 Order 빼기">${esc(o.name)}:${esc(o.units[u].name)} <span aria-hidden="true">×</span></button>`;
-  }).join('');
-  $('[data-a=reset]', p.el).disabled = orig;
+  $('[data-r=dstat]', p.el).innerHTML = `웨이퍼 <b>${fmt.int(sel.n)}</b>장`
+    + (D.has_bad ? ` · bad <span class="badtxt">${fmt.pct(sel.bad)}</span> (<span class="help-term" data-help="rest">다른 Unit</span> ${fmt.int(sel.rest_n)}장 ${fmt.pct(sel.rest_bad)})` : '')
+    + ` · y_value 평균 ${fmt.num(sel.vmean)} · <span class="help-term" data-help="certainty">Certainty</span> ${sel.certainty == null ? '–' : sel.certainty.toFixed(2)}`;
+  renderChips(p);
 }
 
 function diffText(t, hasBad) {
@@ -1529,14 +1568,18 @@ function diffText(t, hasBad) {
 // 순위 하나와 얽힌 다른 대상: 웨이퍼가 같아 이 줄에 묶인 대상 · 다른 STEP 탓 의심 대상 (지금 보는 대상은 '보는 중')
 function renderRelated(p) {
   const box = $('[data-r=related]', p.el);
+  const btn = $('[data-a=rel]', p.el);
   const sp = p.spec;
   const row = S.res.ranking[sp.i];
-  if (!row.merged.length && !row.cross) { box.hidden = true; box.innerHTML = ''; return; }
+  const has = !!(row.merged.length || row.cross);
+  btn.hidden = !has;
+  btn.textContent = `비교표 ${p.relOpen ? '▾' : '▸'}`;
+  btn.setAttribute('aria-expanded', String(!!p.relOpen));
+  if (!has || !p.relOpen) { box.hidden = true; box.innerHTML = ''; return; }
   const hasBad = S.res.info.has_bad;
   const sw = S.res.info.settings.same_wafers;
   const cert = (v) => (v == null ? '–' : v.toFixed(2));
   const ex = (v) => (hasBad ? fmt.signed(v, 1) : fmt.num(v));
-  const metric = hasBad ? '초과 bad' : 'N × ΔValue';
   const act = (id) => (id === sp.id ? '<span class="muted small">보는 중</span>' : `<button type="button" class="ghost mini" data-gid="${esc(id)}">보기</button>`);
   let h = '';
   if (row.merged.length) {
@@ -1549,18 +1592,16 @@ function renderRelated(p) {
       <td class="l diff">${rep ? '' : diffText(t, hasBad)}</td>
       <td class="num">${act(id)}</td></tr>`;
     };
-    h += `<div class="rel-head"><b>같은 웨이퍼로 ${row.rank}위에 묶인 대상</b><span class="muted small">웨이퍼가 ${Math.round((sw ?? 0.9) * 100)}% 이상 같은 대상은 순위표에 한 줄로 나오고, 그 줄의 "+${row.merged.length} 같은 웨이퍼"로 펼칩니다</span></div>
+    h += `<div class="rel-head"><b>같은 웨이퍼로 ${row.rank}위에 묶인 대상</b><span class="muted small">웨이퍼 ${Math.round((sw ?? 0.9) * 100)}% 이상 같음</span>${helpIcon('relwhy')}</div>
       <div class="rel-wrap"><table class="rank rk rel"><thead><tr><th class="l">STEP / Path</th><th class="num">N</th><th class="num">${helpIcon('overlap', true)}겹침</th>${hasBad ? '<th class="num">Bad %</th>' : ''}
       <th class="num">${hasBad ? 'Excess bad' : 'N × ΔValue'}</th><th class="num">Certainty</th><th class="l">서로 다른 웨이퍼</th><th></th></tr></thead>
-      <tbody>${tr(row, true)}${row.merged.map((t) => tr(t, false)).join('')}</tbody></table></div>
-      <div class="muted small rel-why">대표는 ${metric}가 큰 쪽이고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)입니다.
-      겹침이 100%면 데이터로는 어느 STEP 탓인지 가릴 수 없고, 100%보다 작으면 '서로 다른 웨이퍼'의 bad가 차이를 만듭니다.</div>`;
+      <tbody>${tr(row, true)}${row.merged.map((t) => tr(t, false)).join('')}</tbody></table></div>`;
   }
   if (row.cross) {
     const c = row.cross;
     const j = S.res.ranking.findIndex((x) => x.key === c.key);
     const btn = j >= 0 ? `<button type="button" class="ghost mini" data-rank="${j}">${j + 1}위로 더해 보기</button>` : act('x' + c.key);
-    h += `<div class="rel-head"><b>다른 STEP 탓 의심</b><span class="muted small">이 경로에서 아래 경로를 지난 웨이퍼를 빼면 차이가 사라지고, 아래 경로는 이 경로의 웨이퍼를 빼도 기준선을 넘습니다</span></div>
+    h += `<div class="rel-head"><b>다른 STEP 탓 의심</b>${helpIcon('crosswhy')}</div>
       <div class="rel-cross"><span class="step">${esc(stepText(c))}</span> <span class="path inline">${pathHtml(c.parts)}</span>
       <span class="muted">· 웨이퍼 ${fmt.int(c.n)}장 · 겹침 ${fmt.pct(c.overlap, 0)}${hasBad ? ` · bad ${fmt.pct(c.bad)}` : ''} · Certainty ${cert(c.certainty)}</span>
       ${btn}</div>`;
@@ -2314,8 +2355,22 @@ function init() {
   const openRecent = (e) => { const r = e.target.closest('tr[data-id]'); if (r) openRun(r.dataset.id); };
   $('#recent-list').addEventListener('click', openRecent);
   $('#recent-list').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRecent(e); } });
-  $('#setup-open').addEventListener('click', () => { setSetup(true); if (!S.fileId) $('#job_id').focus(); });
+  $('#setup-open').addEventListener('click', () => {
+    const open = $('#setup').hidden;
+    setSetup(open);
+    if (!open) return;
+    $('#setup').scrollIntoView({ block: 'nearest', behavior: smooth() });
+    if (!S.fileId) $('#job_id').focus({ preventScroll: true });
+  });
   $('#setup-close').addEventListener('click', () => setSetup(false));
+  $('#more-btn').addEventListener('click', () => setMore($('#concl-more').hidden));
+  $('#meta-flags').addEventListener('click', (e) => { if (e.target.closest('[data-more]')) setMore(true); });
+  $('#concl-body').addEventListener('click', (e) => {   // "+n 같은 웨이퍼": 순위표에서 1위의 묶인 대상 줄을 펼쳐 보여 준다
+    if (!e.target.closest('.grp[data-concl]') || !S.res) return;
+    S.open.add(0);
+    renderRanking();
+    revealRow(0);
+  });
   $('#concl-copy').addEventListener('click', async () => {
     toast(await copyText(S.conclText) ? '결론 문장을 복사했습니다. 회의록 · 메신저에 붙여 넣으세요.' : '복사하지 못했습니다. 문장을 드래그해서 복사하세요.', { kind: '' });
   });
