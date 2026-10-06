@@ -140,6 +140,7 @@ const HELP = {
   dvalue: 'good_bad가 없을 때의 순위 기준: 웨이퍼 수 × (이 경로 y_value 평균 − 전체 평균).',
   certainty: '기준선 대비 위치입니다. 1을 넘으면 기준선 밖(우연으로 보기 어려움)입니다. 예: 2.0 = 가운데 선에서 기준선까지 거리의 2배만큼 벗어남.',
   overlap: '두 대상의 웨이퍼를 합친 것 중 양쪽 모두에 있는 비율입니다. 100%면 웨이퍼가 똑같아 데이터로는 둘을 가릴 수 없습니다.',
+  follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
   rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
   cmp: '빨간 점 = 이 경로, 회색 점 = 같은 Order를 다른 Unit으로 지난 웨이퍼. 두 점이 멀수록 이 경로만 나쁩니다. 겹침 = 위쪽 순위와 웨이퍼가 겹치는 비율(50% 이상만 표시).',
 };
@@ -774,11 +775,26 @@ function renderFunnel() {
   drawMarks();
   $('#funnel-legend').innerHTML = [
     `<span class="item"><span class="dot" style="background:${C.muted}"></span>기준선 안 ${fmt.int(fn.gray_total)}개${gn.length < fn.gray_total ? ` (${fmt.int(gn.length)}개만 그림)` : ''}</span>`,
-    `<span class="item"><span class="dot" style="background:${C.bad}"></span>bad path ${fmt.int(fn.marks.filter((k) => k.side === 'bad').length)}개</span>`,
+    ...followLegend(fn),
     `<span class="item"><span class="dot" style="background:${C.good}"></span>good path ${fmt.int(fn.marks.filter((k) => k.side === 'good').length)}개</span>`,
     `<span class="item">— ${BOUND_NOTE[m]}</span>`,
     `<span class="item"><span class="dot" style="border:2px solid ${C.ring};width:10px;height:10px"></span>고른 순위</span>`,
   ].join('');
+}
+
+// 기준선 밖 점 중 원인 후보를 따라 함께 넘은 점 (엔진 분류: 상속 · 하위 기인)
+const isFollow = (k) => k.side === 'bad' && (k.status === 'inherited' || k.status === 'explained');
+const PT_R = 4.5;                                       // funnel 점 크기 (모두 같게)
+
+// 범례의 기준선 밖 항목: 분류가 있으면 원인 후보 · 따라 올라온 점(보기 고르기), 이번 버전 전에 계산한 기록이면 bad path 하나로
+function followLegend(fn) {
+  const bads = fn.marks.filter((k) => k.side === 'bad');
+  if (!fn.marks.some((k) => k.status)) return [`<span class="item"><span class="dot" style="background:${C.bad}"></span>bad path ${fmt.int(bads.length)}개</span>`];
+  const nf = bads.filter(isFollow).length;
+  const seg = ['fade', '흐리게', 'hide', '숨기기', 'show', '그대로'];
+  return [`<span class="item"><span class="dot" style="background:${C.bad}"></span>원인 후보 ${fmt.int(bads.length - nf)}개</span>`,
+    nf ? `<span class="item"><span class="dot hollow" style="border-color:${C.bad}"></span>따라 올라온 점 ${fmt.int(nf)}개${helpIcon('follow')}`
+      + `<span class="seg small" id="ffollow" role="group" aria-label="따라 올라온 점 보기">${[0, 2, 4].map((j) => `<button type="button" data-v="${seg[j]}" class="${S.follow === seg[j] ? 'on' : ''}">${seg[j + 1]}</button>`).join('')}</span></span>` : ''];
 }
 
 function drawMarks() {
@@ -793,15 +809,21 @@ function drawMarks() {
   const lit = (k) => !hv || k.rank === hv.rank || k.target === hv.rank || (hv.key != null && k.key === hv.key);
   const hvRing = (k) => !!hv && (hv.key != null ? k.key === hv.key : k.rank != null && k.rank === hv.rank);
   const marks = S.res.funnel.marks;
-  const order = marks.map((k, i) => i).sort((a, c) => (marks[a].rank ? 1 : 0) - (marks[c].rank ? 1 : 0));
+  const tier = (k) => (k.rank ? 2 : isFollow(k) ? 0 : 1);   // 따라 올라온 점 → 나머지 → 순위 대표 순서로 (위에 그린 것이 보이게)
+  const order = marks.map((k, i) => i).sort((a, c) => tier(marks[a]) - tier(marks[c]));
   let s = '';
   for (const i of order) {
     const k = marks[i];
     if (k[m] == null) continue;
+    const fol = isFollow(k);
+    if (fol && S.follow === 'hide') continue;
     const x = f.xs(k.n).toFixed(1);
     const y = f.ys(k[m]).toFixed(1);
     const op = lit(k) ? 1 : 0.25;
-    s += `<circle cx="${x}" cy="${y}" r="${k.rank ? 5 : 3.5}" fill="${k.side === 'bad' ? C.bad : C.good}" opacity="${op}" data-i="${i}" style="cursor:${k.rank || k.target ? 'pointer' : 'default'}"/>`;
+    const cur_ = `data-i="${i}" style="cursor:${k.rank || k.target ? 'pointer' : 'default'}"`;
+    s += fol && S.follow === 'fade'
+      ? `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${C.card}" stroke="${C.bad}" stroke-width="1.3" opacity="${(op * 0.6).toFixed(2)}" ${cur_}/>`
+      : `<circle cx="${x}" cy="${y}" r="${PT_R}" fill="${k.side === 'bad' ? C.bad : C.good}" opacity="${op}" ${cur_}/>`;
     if (k.rank && k.rank <= 10) s += `<text x="${(+x + 8).toFixed(1)}" y="${(+y - 7).toFixed(1)}" fill="${C.bad}" font-size="11" font-weight="600" opacity="${op}" pointer-events="none">${k.rank}</text>`;
     const here = isCur(k);
     if (here && (S.picks.length > 1 || cur.kind !== 'rank')) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="${C.ring}" stroke-opacity="0.35" stroke-width="5" pointer-events="none"/>`;   // 아래 상세에 보이는 대상
@@ -827,6 +849,8 @@ function markTip(e) {
   const k = S.res.funnel.marks[+c.dataset.i];
   const who = k.rank ? `${k.rank}위 혐의 대상`
     : k.merged ? `웨이퍼가 ${k.merged}위와 같아 그 줄에 묶인 대상 · 누르면 이 대상의 상세를 봅니다`
+      : isFollow(k) ? (k.status === 'inherited' ? '따라 올라온 점 · 상속 (Order를 하나 뺀 경로보다 뚜렷하게 나쁘지 않음)' : '따라 올라온 점 · 하위 기인 (더 좁은 경로가 이 차이를 설명함)')
+        + (k.cause ? `<br>기대는 경로: ${esc(k.cause)}` : '') + (k.target ? ` · ${k.target}위 대상 묶음` : '')
       : k.target ? `${k.target}위 대상에 포함 (같이 올라온 조합)`
         : k.side === 'bad' ? '기준선 밖 (혐의 대상과 묶이지 않음)' : 'good path (기준선보다 뚜렷하게 좋음)';
   showTip(`<b>${esc(k.label)}</b><br>${who}<br>웨이퍼 ${fmt.int(k.n)}장 · Order ${k.k}개 · Certainty ${k.certainty == null ? '–' : k.certainty.toFixed(2)}`
@@ -885,7 +909,7 @@ function brushSelect(b) {
   const idx = new Set();
   for (const k of S.res.funnel.marks) {
     const r = k.rank || k.target;
-    if (!r || k[m] == null) continue;
+    if (!r || k[m] == null || (S.follow === 'hide' && isFollow(k))) continue;
     const x = f.xs(k.n);
     const y = f.ys(k[m]);
     if (x >= xa && x <= xb && y >= ya && y <= yb) idx.add(r - 1);
@@ -1657,6 +1681,7 @@ function renderPeers(p) {
     const vals = info[m];
     for (let i = 0; i < info.n.length; i++) {
       if (!vals || vals[i] == null || flatKey(info.items[i]) === key) continue;
+      if (S.follow === 'hide' && (info.flag[i] === 3 || info.flag[i] === 4)) continue;   // 따라 올라온 점 숨기기
       pts.push({ n: info.n[i], v: vals[i], f: info.flag[i], s: i });
     }
   } else {
@@ -1697,16 +1722,21 @@ function renderPeers(p) {
   const tick = (v) => (m === 'bad' ? Math.round(v * 100) + '%' : m === 'ex' && D.has_bad && v ? fmt.signed(v) : fmt.tick(v));
   const yt = m === 'judg' ? [] : linTicks(lo, hi, 4).map((v) => ({ v, l: tick(v) }));
   s += axes({ L, R, T, B, xs, ys, xt, yt, xl: '웨이퍼 수', yl: m === 'ex' ? (D.has_bad ? '초과 bad (장)' : 'N × ΔValue') : P_AXIS[m], yo: 42 });
-  const color = (f) => (f === 1 ? C.bad : f === 2 ? C.good : C.muted);
-  pts.sort((a, b) => (a.f ? 1 : 0) - (b.f ? 1 : 0));   // 기준선 밖 · 좋은 쪽 점이 위에 보이게
+  // 점: 기준선 안(회색) → 따라 올라온 점(상속 3 · 하위 기인 4: 속 빈 원) → 원인 후보(1)와 좋은 쪽(2) → 지금 선택. 크기는 모두 같다
+  const fol = (f) => f === 3 || f === 4;
+  const tierP = (f) => (!f ? 0 : fol(f) ? 1 : 2);
+  pts.sort((a, b) => tierP(a.f) - tierP(b.f));
+  const R0 = 4;
   for (const q of pts) {
-    s += `<circle cx="${xs(q.n).toFixed(1)}" cy="${ys(q.v).toFixed(1)}" r="${stepView ? 3.5 : 4}" fill="${stepView ? color(q.f) : C.muted}" opacity="${stepView && q.f === 1 ? 0.6 : 0.85}" `
-      + `${q.s != null ? `data-s="${q.s}"` : `data-g="${q.g}"`}/>`;
+    const at = `cx="${xs(q.n).toFixed(1)}" cy="${ys(q.v).toFixed(1)}" r="${R0}" ${q.s != null ? `data-s="${q.s}"` : `data-g="${q.g}"`}`;
+    if (!stepView) s += `<circle ${at} fill="${C.muted}" opacity="0.85"/>`;
+    else if (fol(q.f) && S.follow === 'fade') s += `<circle ${at} fill="${C.card}" stroke="${C.bad}" stroke-width="1.2" opacity="0.6"/>`;
+    else s += `<circle ${at} fill="${q.f === 2 ? C.good : q.f ? C.bad : C.muted}" opacity="${q.f ? 0.9 : 0.75}"/>`;
   }
-  if (sv != null) {                                 // 지금 선택: 빨간 점 + 고리
+  if (sv != null) {                                 // 지금 선택: 같은 크기의 빨간 점 + 고리
     const x = xs(sel.n).toFixed(1);
     const y = ys(sv).toFixed(1);
-    s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${C.ink}" stroke-width="1.3" pointer-events="none"/><circle cx="${x}" cy="${y}" r="6" fill="${C.bad}" data-cur="1"/>`;
+    s += `<circle cx="${x}" cy="${y}" r="9" fill="none" stroke="${C.ink}" stroke-width="1.4" pointer-events="none"/><circle cx="${x}" cy="${y}" r="${R0}" fill="${C.bad}" data-cur="1"/>`;
   }
   el.innerHTML = s;
 }
@@ -1721,7 +1751,9 @@ function renderPeerCap(p, info, err) {
   if (p.pScope === 'step') {
     if (err) { el.innerHTML = `<span class="warntxt">${esc(err)}</span>`; return; }
     const r = sel.step_rank;
+    const nf = info ? info.flag.filter((f) => f === 3 || f === 4).length : 0;
     el.textContent = r ? `${who}: 이 STEP 조합 ${fmt.int(r.total)}개 중 Certainty ${rk(r.cert)} · ${exName()} ${rk(r.ex)}`
+      + (nf ? (S.follow === 'hide' ? ` · 따라 올라온 점 ${nf}개 숨김` : S.follow === 'fade' ? ' · 속 빈 빨간 점 = 따라 올라온 점' : '') : '')
       + (info && info.shown < info.total ? ` · 기준선 안 조합은 ${fmt.int(info.shown)}개만 그림` : '') : '';
     return;
   }
@@ -1747,7 +1779,8 @@ function peerTip(p, e) {
     if (!d) { hideTip(); return; }
     const i = +c.dataset.s;
     const f = d.flag[i];
-    h = `<b>${esc(flatLabel(D, d.items[i]))}</b>${f === 1 ? ' · 기준선 밖' : f === 2 ? ' · good path' : ''}<br>${body(d.n[i], d.bad ? d.bad[i] : null, d.mean[i], d.ex[i], d.cert[i])}`;
+    const tag = { 1: ' · 원인 후보', 2: ' · good path', 3: ' · 따라 올라온 점(상속)', 4: ' · 따라 올라온 점(하위 기인)' }[f] || '';
+    h = `<b>${esc(flatLabel(D, d.items[i]))}</b>${tag}<br>${body(d.n[i], d.bad ? d.bad[i] : null, d.mean[i], d.ex[i], d.cert[i])}`;
   } else {
     const g = +c.dataset.g;
     const q = D.peers.find((x) => x.g === g);
@@ -2188,6 +2221,7 @@ function init() {
   readColors();
   S.ptSize = store.get('uc.ptSize2', 4.5);
   S.fView = store.get('uc.fview', 'all');
+  S.follow = store.get('uc.follow', 'fade');
   setSeg($('#fview'), S.fView);
   document.addEventListener('uc-theme', () => { readColors(); rerender(); });   // 밝은 · 어두운 화면을 바꾸면 차트 색을 다시 읽어 그린다
   watchWidths();
@@ -2240,6 +2274,15 @@ function init() {
     toast(await copyText(S.conclText) ? '결론 문장을 복사했습니다. 회의록 · 메신저에 붙여 넣으세요.' : '복사하지 못했습니다. 문장을 드래그해서 복사하세요.', { kind: '' });
   });
   $('#rank-csv').addEventListener('click', () => { if (S.res) rankingCsv(); });
+  $('#funnel-legend').addEventListener('click', (e) => {   // 따라 올라온 점: 흐리게 · 숨기기 · 그대로 (경로 비교에도 같이)
+    const b = e.target.closest('#ffollow button');
+    if (!b || !S.res) return;
+    S.follow = b.dataset.v;
+    store.set('uc.follow', S.follow);
+    setSeg($('#ffollow'), S.follow);
+    drawMarks();
+    if (S.panel && S.panel.det) renderPeers(S.panel);
+  });
   $('#fview').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || !S.res) return;

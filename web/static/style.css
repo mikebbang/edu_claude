@@ -193,6 +193,8 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink2); margin-top: 4px; }
 .legend .item { display: inline-flex; align-items: center; gap: 5px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.hollow { background: transparent; border: 1.5px solid; box-sizing: border-box; }   /* 따라 올라온 점 (속 빈 원) */
+#ffollow { margin-left: 6px; vertical-align: middle; }
 
 /* 표 (순위표 · 실행 기록 · 묶인 대상) */
 .table-wrap { max-height: 470px; overflow: auto; outline: none; border-top: 1px solid var(--line); }

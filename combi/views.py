@@ -92,7 +92,8 @@ def _step_table(result):
          'ex': np.array([metric(c, r) for c in combos], dtype=np.float32),
          'vmean': np.array([c['vmean'] for c in combos], dtype=np.float32),
          'bad': np.array([c['bad_rate'] for c in combos], dtype=np.float32) if d['B'] is not None else None,
-         'flag': np.array([1 if c['over'] else 2 if c['z'] < -c['thr'] else 0 for c in combos], dtype=np.int8),   # 1 기준선 밖 · 2 좋은 쪽
+         'flag': np.array([(1 if c['status'] == 'bad' else 3 if c['status'] == 'inherited' else 4) if c['over']
+                           else 2 if c['z'] < -c['thr'] else 0 for c in combos], dtype=np.int8),   # 1 원인 후보 · 3 상속 · 4 하위 기인 · 2 좋은 쪽 · 0 기준선 안
          'ioff': np.r_[0, np.cumsum(2 * k)],                                               # 경로 = items[ioff[i]:ioff[i+1]] (Order, Unit 번갈아)
          'items': np.array([v for c in combos for it in c['items'] for v in it], dtype=np.int16)}
     result.step_table = t
@@ -212,6 +213,27 @@ def run_payload(result):
     marks = []                                              # 경계 밖 점 (bad · good path)
     steps = d['steps']
     same_as = result.ranked['same_as']
+
+    def cause_of(c):
+        """따라 올라온 점이 기대는 원인 후보: 하위 기인은 그 점을 설명하는 더 좁은 조합(Order를 하나 더 고른 경로),
+        상속은 차이를 넘지 못한 부모(Order 하나를 뺀 경로). 그 경로도 따라 올라온 점이면 원인 후보에 닿을 때까지 따라간다"""
+        label, cur, seen = None, c, set()
+        while cur['status'] in ('explained', 'inherited') and cur['key'] not in seen:
+            seen.add(cur['key'])
+            st_ = steps[cur['step']]
+            if cur['status'] == 'explained' and cur.get('explained_by') is not None:
+                nxt = combos[cur['explained_by']]
+            elif cur['status'] == 'inherited' and cur.get('parents'):
+                p_ = min(cur['parents'], key=lambda x: x['t'])
+                nxt = r['by_key'].get(p_['key'])
+                if nxt is None:                             # 부모를 따로 계산하지 않은 경우: 부모 경로 이름까지만
+                    return f"{st_['name']} {path_label(st_, p_['items'])}"
+            else:
+                break
+            label = f"{steps[nxt['step']]['name']} {path_label(steps[nxt['step']], nxt['items'])}"
+            cur = nxt
+        return label
+
     for i in np.flatnonzero(over | good):
         c = combos[i]
         st = steps[c['step']]
@@ -219,7 +241,8 @@ def run_payload(result):
                       'lmean': num(ylm[i], 5) if ylm is not None else None,
                       'bad': num(yb[i], 5) if yb is not None else None, 'rank': rank_of.get(c['key']), 'target': tgt.get(c['key']),
                       'label': f"{st['name']} {path_label(st, c['items'])}", 'k': c['k'], 'certainty': num(c['z'] / c['thr'], 3),
-                      'key': c['key'], 'merged': rank_of.get(same_as[c['key']]) if c['key'] in same_as else None})
+                      'key': c['key'], 'merged': rank_of.get(same_as[c['key']]) if c['key'] in same_as else None,
+                      'status': c['status'] if over[i] else 'good', 'cause': cause_of(c) if over[i] else None})   # bad 원인 후보 · inherited 상속 · explained 하위 기인
     groups = {g: m for g, m in result.res['share_groups'].items()}
     counts = result.counts
     info = {
