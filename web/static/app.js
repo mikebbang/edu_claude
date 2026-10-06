@@ -360,7 +360,7 @@ async function loadResult(id, token, note = '') {
   for (const b of $$('#yseg button[data-v=bad]')) b.disabled = !hasBad;
   if (!hasBad && S.yMode === 'bad') setSeg($('#yseg'), (S.yMode = 'judg'));
   const hasLog = !!S.res.funnel.bounds.lmean;           // y_value 로그: 값이 모두 0보다 크고 이번 코드로 계산한 기록만
-  for (const b of $$('#yseg button[data-v=lmean]')) b.disabled = !hasLog;
+  for (const b of $$('#yseg button[data-v=lmean]')) { b.classList.toggle('off', !hasLog); b.setAttribute('aria-disabled', String(!hasLog)); }
   if (!hasLog && S.yMode === 'lmean') setSeg($('#yseg'), (S.yMode = 'judg'));
   const jobs = S.res.info.data.job_ids || [];
   $('#topnote').textContent = `${jobs.length ? `JOB ID : ${jobs[0]}${jobs.length > 1 ? ` 외 ${jobs.length - 1}개` : ''} · ` : ''}${S.res.info.data.wafers.toLocaleString('ko-KR')}장 · 혐의 대상 ${S.res.ranking.length}개`;
@@ -721,8 +721,9 @@ function renderFunnel() {
   const L = 60, R = W - 14, T = 12, B = H - 48;
   const xs = scaleLog(ns[0], ns[ns.length - 1], L, R);
   const logY = m === 'lmean';                           // y_value 로그: 범위 · 점 · 선을 log10으로 잡고 눈금은 원래 단위로
-  const tv = logY ? (v) => (v != null && v > 0 ? Math.log10(v) : null) : (v) => v;
   const b = bd[m];
+  const lsh = logY && b && b.shift ? b.shift : 0;       // y_value에 0 이하가 있으면 가장 작은 값보다 조금 아래를 기준으로 로그
+  const tv = logY ? (v) => (v != null && v > lsh ? Math.log10(v - lsh) : null) : (v) => v;
   const bt = b && logY ? { lo: b.lo.map(tv), hi: b.hi.map(tv), mid: tv(b.mid) } : b;
   const gv = (fn.gray[m] || []).map(tv).filter((v) => v != null).sort((a, c) => a - c);
   const vals = gv.length ? [quantile(gv, 0.002), quantile(gv, 0.998)] : [];
@@ -767,7 +768,15 @@ function renderFunnel() {
     if (b.mid != null) s += `<line x1="${L}" x2="${R}" y1="${ys(b.mid)}" y2="${ys(b.mid)}" stroke="${C.line2}" stroke-dasharray="4 3"/>`;
   }
   s += '</g>';
-  const yt = m === 'judg' ? [] : logY ? logTicks(10 ** lo, 10 ** hi).map((v) => ({ v, l: fmt.tick(v) }))
+  const logTk = () => {                                  // 원래 단위의 보기 좋은 값(1 · 2 · 5 · 10 …)을 로그 자리에 놓는다
+    const vlo = 10 ** lo + lsh;
+    const vhi = 10 ** hi + lsh;
+    const t0 = Math.max(vlo, vhi / 1e4);
+    const tk = t0 > 0 && vhi > t0 ? logTicks(t0, vhi) : [];
+    if (lsh < 0 && vlo <= 0 && vhi >= 0) tk.unshift(0);
+    return tk.filter((t) => t > lsh).map((v) => ({ v, l: fmt.tick(v) }));
+  };
+  const yt = m === 'judg' ? [] : logY ? logTk()
     : linTicks(lo, hi, 5).map((v) => ({ v, l: m === 'bad' ? Math.round(v * 100) + '%' : fmt.tick(v) }));
   s += axes({ L, R, T, B, xs, ys, xt: logTicks(ns[0], ns[ns.length - 1]).map((v) => ({ v, l: fmt.int(v) })), yt, xl: '웨이퍼 수 N (조합을 지난 웨이퍼)', yl: Y_TITLE[m], yo: 44 });
   s += '<g id="fmarks"></g><g id="fbrush"></g>';
@@ -2097,11 +2106,15 @@ function bindHome() {
 }
 
 // ── 이벤트 ─────────────────────────────────────────────────────────────
+// y_value 로그를 쓸 수 없는 기록 (이번 버전 전 코드로 계산했거나 서버가 아직 예전 코드)
+const LOG_OFF = '이 실행 기록에는 y_value 로그 값이 없습니다. 이번 버전 전 코드로 계산했거나, 서버가 아직 예전 코드로 돌고 있습니다. 서버를 새 코드로 다시 켠 뒤 Run을 다시 누르세요.';
+
 function bindAxisTips(el) {
   for (const b of $$('button', el)) {
     b.addEventListener('mouseenter', () => {
       const k = b.dataset.v;
       const r = b.getBoundingClientRect();
+      if (b.classList.contains('off')) { showTip(`<div class="help-tip">${esc(LOG_OFF)}</div>`, r.left, r.bottom - 8); return; }
       showTip(`<b>${AXIS_TIP[k][0]}</b><svg viewBox="0 0 230 84" width="230" height="84">${axisTipSvg(k)}</svg><div class="muted">${AXIS_TIP[k][1]}</div>`, r.left, r.bottom - 8);
     });
     b.addEventListener('mouseleave', hideTip);
@@ -2187,6 +2200,7 @@ function bindFunnel() {
   $('#yseg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || b.disabled || !S.res) return;
+    if (b.classList.contains('off')) { toast(esc(LOG_OFF), { timeout: 7000 }); return; }
     S.yMode = b.dataset.v;
     setSeg($('#yseg'), S.yMode);
     renderFunnel();

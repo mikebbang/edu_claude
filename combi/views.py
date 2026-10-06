@@ -6,7 +6,7 @@ import numpy as np
 
 from .engine import MISSING, mean_z, members_of, order_text, share_group
 from .ranking import expected_bad, metric, path_label, same_order_paths
-from .stats import shrink
+from .stats import log_shift, shrink
 
 GRAY_MAX = 40000             # funnel에 그리는 기준선 안 점의 최대 수 (넘으면 고르게 골라 그림 · 모양은 같음)
 PEER_MAX = 600               # 같은 Order 다른 경로 비교에 그리는 경로의 최대 수 (웨이퍼가 많은 순)
@@ -33,10 +33,11 @@ def _scales(result):
     d, r = result.data, result.res
     v = np.asarray(d['value'], dtype=float)
     p0 = r['p0']
-    lv = np.log(v) if (v > 0).all() else None              # y_value 로그 (기하평균 축 · 값이 모두 0보다 클 때만)
+    shift = log_shift(v)                                    # y_value 로그 (기하평균 축): 0 이하가 있으면 가장 작은 값보다 조금 아래를 기준으로
+    lv = np.log(v - shift)
     return {'mu': r['mu'], 'sd': r['sd'], 'N': r['N'], 'vmu': float(np.mean(v)), 'vsd': float(np.std(v, ddof=1)),
             'p0': p0, 'bsd': math.sqrt(p0 * (1 - p0)) if p0 is not None else None,
-            'lmu': float(lv.mean()) if lv is not None else None, 'lsd': float(lv.std(ddof=1)) if lv is not None else None}
+            'lmu': float(lv.mean()), 'lsd': float(lv.std(ddof=1)), 'lshift': shift}
 
 
 def _half(sc, z, n):
@@ -54,7 +55,9 @@ def _bounds(sc, thr, grid):
                     'mid': num(sc['vmu'])}}
     if sc['lmu'] is not None:                               # y_value 로그(기하평균): 로그 눈금에서 위아래 같은 폭인 기준선
         hl = thr * sc['lsd'] / np.sqrt(grid) * sh
-        out['lmean'] = {'lo': nums(np.exp(sc['lmu'] - hl)), 'hi': nums(np.exp(sc['lmu'] + hl)), 'mid': num(math.exp(sc['lmu']))}
+        k_ = sc['lshift']
+        out['lmean'] = {'lo': nums(np.exp(sc['lmu'] - hl) + k_), 'hi': nums(np.exp(sc['lmu'] + hl) + k_), 'mid': num(math.exp(sc['lmu']) + k_),
+                        'shift': num(k_, 9)}
     if sc['p0'] is not None:
         hw = thr * sc['bsd'] / np.sqrt(grid) * sh
         lo, hi = np.clip(sc['p0'] - hw, 0, 1), np.clip(sc['p0'] + hw, 0, 1)
@@ -201,7 +204,7 @@ def run_payload(result):
     thr = np.array([c['thr'] for c in combos], dtype=float)
     yj = sc['mu'] + z / thr * _half(sc, zk[1] * s, n)       # 종합: 자기 기준 대비 위치를 Order 1개 기준 띠에 맞춘 높이 (띠 밖 ⇔ 판정 밖)
     ym = np.array([c['vmean'] for c in combos], dtype=float)
-    ylm = np.exp(np.array([c.get('lvmean', math.nan) for c in combos], dtype=float)) if sc['lmu'] is not None else None   # 기하평균
+    ylm = np.exp(np.array([c.get('lvmean', math.nan) for c in combos], dtype=float)) + sc['lshift']   # 기하평균 (0 이하가 있으면 기준만큼 되돌림)
     yb = np.array([c['bad_rate'] for c in combos], dtype=float) if d['B'] is not None else None
     over = np.array([c['over'] for c in combos], dtype=bool)
     good = z < -thr                                         # 경계 밖 · 좋은 쪽 (기준선보다 뚜렷하게 낮음)

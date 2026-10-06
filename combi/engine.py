@@ -4,7 +4,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from .stats import FWER_ALPHA, Z95, binom_fix, compositions, norm_inv, part_shrink, shrink, spread_of
+from .stats import FWER_ALPHA, Z95, binom_fix, compositions, log_shift, norm_inv, part_shrink, shrink, spread_of
 
 MISSING = 0xFFFF                                  # 웨이퍼가 그 Order를 지나지 않음 (assign 배열의 빈 값)
 
@@ -30,7 +30,7 @@ def analyze(data, min_n=20, max_depth=3, full_depth=2, spread_adjust=True, progr
     Y = sig['y']
     Y2 = Y * Y
     V = np.asarray(data['value'], dtype=float) if data.get('value') is not None else None   # 원래 y_value (조합마다 평균을 웹 funnel에 씀)
-    LV = np.log(V) if V is not None and bool((V > 0).all()) else None   # 로그 y_value (조합마다 기하평균을 웹 funnel에 씀 · 값이 모두 0보다 클 때만)
+    LV = np.log(V - log_shift(V)) if V is not None else None   # 로그 y_value (조합마다 기하평균을 웹 funnel에 씀 · 0 이하가 있으면 조금 아래를 기준으로)
     mu, sd = base['y']
     bad01 = np.nan_to_num(data['bad']) if 'b' in sig else None
     p0 = float(bad01.mean()) if 'b' in sig else 0.0
