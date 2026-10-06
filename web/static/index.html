@@ -136,15 +136,23 @@
       <button type="button" class="ghost mini" id="concl-copy" title="결론 문장을 복사해 회의 · 메신저에 붙여 넣기">복사</button>
     </div>
     <div class="grid-main">
-      <div class="card">
+      <div class="card funnel-card">
         <div class="card-head">
           <h2>Funnel</h2><span class="muted small" id="fhint">모든 STEP의 경로</span><span class="help" data-help="howto"><svg class="ico-info" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.6v.1"/></svg></span><span class="grow"></span>
-          <span class="seg small icons" id="fview" role="group" aria-label="funnel 보는 범위">
-            <button type="button" data-v="all" class="on" aria-label="띠 전체 보기" data-help="fview_all"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5C9 9 14 10.6 21 11V13C14 13.4 9 15 3 19.5Z" fill="currentColor" fill-opacity=".2" stroke="none"/><path d="M3 4.5C9 9 14 10.6 21 11"/><path d="M3 19.5C9 15 14 13.4 21 13"/></svg></button><button type="button" data-v="pts" aria-label="점 위주로 보기" data-help="fview_pts"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><circle cx="10" cy="11" r="1.3" fill="currentColor"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="15" r="1.3" fill="currentColor"/></svg></button>
-          </span>
           <span class="seg" id="yseg" role="group" aria-label="funnel 세로축">
             <button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="yz">y_value</button><button type="button" data-v="bz">bad 비율</button>
           </span>
+          <button type="button" class="ghost icon-only" id="view-btn" aria-expanded="false" aria-controls="view-pop" title="보기 설정 (보는 범위 · 따라 올라온 점 · 산점도 점 크기)"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.1,9.8 L21.9,10.3 L21.9,13.7 L19.1,14.2 L18.5,15.5 L20.2,17.8 L17.8,20.2 L15.5,18.5 L14.2,19.1 L13.7,21.9 L10.3,21.9 L9.8,19.1 L8.5,18.5 L6.2,20.2 L3.8,17.8 L5.5,15.5 L4.9,14.2 L2.1,13.7 L2.1,10.3 L4.9,9.8 L5.5,8.5 L3.8,6.2 L6.2,3.8 L8.5,5.5 L9.8,4.9 L10.3,2.1 L13.7,2.1 L14.2,4.9 L15.5,5.5 L17.8,3.8 L20.2,6.2 L18.5,8.5 Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        </div>
+        <!-- 보기 설정: 자주 안 바꾸는 것만 모음 (고른 값은 이 브라우저에 기억) -->
+        <div class="view-pop" id="view-pop" role="dialog" aria-label="보기 설정" hidden>
+          <div class="vp-row"><span class="vp-lab">보는 범위</span>
+            <span class="seg small" id="fview" role="group" aria-label="funnel 보는 범위"><button type="button" data-v="all" class="on" data-help="fview_all"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5C9 9 14 10.6 21 11V13C14 13.4 9 15 3 19.5Z" fill="currentColor" fill-opacity=".2" stroke="none"/><path d="M3 4.5C9 9 14 10.6 21 11"/><path d="M3 19.5C9 15 14 13.4 21 13"/></svg>띠 전체</button><button type="button" data-v="pts" data-help="fview_pts"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><circle cx="10" cy="11" r="1.3" fill="currentColor"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="15" r="1.3" fill="currentColor"/></svg>점 위주</button></span></div>
+          <div class="vp-row"><span class="vp-lab">따라 올라온 점</span>
+            <span class="seg small" id="ffollow" role="group" aria-label="따라 올라온 점 보기"><button type="button" data-v="fade" class="on">흐리게</button><button type="button" data-v="hide">숨기기</button><button type="button" data-v="show">그대로</button></span></div>
+          <div class="vp-row"><span class="vp-lab">산점도 점 크기</span>
+            <span class="size-ctl"><input type="range" min="1" max="8" step="0.5" id="pt-size" aria-label="산점도 점 크기"><span class="muted small" id="pt-size-v"></span></span></div>
+          <div class="vp-foot muted small">경로 비교에도 같이 적용 · 고른 값은 이 브라우저에 기억합니다</div>
         </div>
         <div class="chart" id="funnel"><canvas></canvas><svg role="img" aria-label="funnel 차트"></svg>
           <!-- 처음 한 번만: 사용법 (닫으면 이 브라우저에서는 다시 안 나옴 · 제목 옆 ⓘ에 같은 설명) -->
@@ -205,6 +213,7 @@
         <button type="button" class="ghost" data-a="reset" hidden><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>원래 경로로</button>
       </div>
       <div class="dnav">
+        <button type="button" class="ghost icon-only" data-a="wcsv" aria-label="웨이퍼 CSV 내려받기" title="웨이퍼 CSV 내려받기 (이 경로와 같은 Order를 다른 Unit으로 지난 웨이퍼: lot · wafer_id · 시각 · y_value · good_bad)"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg></button>
         <button type="button" class="ghost icon-only" data-a="link" aria-label="이 화면 링크 복사" title="이 화면 링크 복사 (받은 사람도 같은 대상 · 경로를 봄)"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg></button>
         <button type="button" class="ghost icon-only" data-a="prev" aria-label="이전 순위" title="이전 순위"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <span class="dcount muted small" data-r="count"></span>
@@ -225,8 +234,6 @@
       </div>
       <div class="sub cell">
         <div class="sub-head"><h3>웨이퍼 산점도</h3><span class="grow"></span>
-          <label class="size-ctl muted small">점 크기 <input type="range" min="1" max="8" step="0.5" data-a="size" aria-label="산점도 점 크기"></label>
-          <button type="button" class="ghost mini" data-a="wcsv" title="이 경로와 같은 Order를 다른 Unit으로 지난 웨이퍼 목록(lot · wafer_id · 시각 · y_value · good_bad)을 CSV로"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg>CSV</button>
           <span class="seg small" data-r="cseg" role="group" aria-label="산점도 색"><button type="button" data-v="hi" class="on">선택 경로 강조</button><button type="button" data-v="combo">경로별 색</button></span>
         </div>
         <div class="legend" data-r="slegend"></div>
@@ -235,8 +242,9 @@
       <div class="sub cell">
         <div class="sub-head"><h3>경로 비교</h3><span class="grow"></span>
           <span class="seg small" data-r="sseg" role="group" aria-label="비교 범위"><button type="button" data-v="step" class="on" title="이 STEP에서 계산한 모든 경로 (위 funnel을 이 STEP만 걸러 본 것)">STEP 전체</button><button type="button" data-v="same" title="지금 고른 Order들을 다른 Unit으로 지난 경로">같은 Order</button></span>
-          <span class="seg small" data-r="pseg" role="group" aria-label="비교 차트 세로축"><button type="button" data-v="judg" class="on">종합</button><button type="button" data-v="yz">y_value</button><button type="button" data-v="bz">bad 비율</button><button type="button" data-v="ex">초과 bad</button></span>
+          <label class="chk small" title="체크하지 않으면 세로축은 위 funnel에서 고른 축(종합 · y_value · bad 비율)을 따라갑니다"><input type="checkbox" data-a="pex"><span data-r="pexl">초과 bad로 보기</span></label>
         </div>
+        <div class="muted small paxis" data-r="paxis"></div>
         <div class="legend pcap" data-r="pcap"></div>
         <svg class="chart-svg" data-r="peers" role="img" aria-label="경로 비교"></svg>
       </div>

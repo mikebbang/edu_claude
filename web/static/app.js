@@ -496,6 +496,13 @@ function setMore(open) {
   b.textContent = `자세히 ${open ? '▴' : '▾'}`;
 }
 
+// 보기 설정 창 (funnel 제목 줄의 ⚙): 보는 범위 · 따라 올라온 점 · 산점도 점 크기
+function setViewPop(open) {
+  $('#view-pop').hidden = !open;
+  $('#view-btn').setAttribute('aria-expanded', String(open));
+  if (open) hideTip();
+}
+
 // 지금 보는 화면(고른 순위 · 상세 대상 · 바꾼 경로)의 링크를 복사한다
 async function copyView() {
   syncHash();
@@ -905,10 +912,8 @@ function followLegend(fn) {
   const nR = S.res.ranking.length;
   const merged = bads.filter((k) => !isFollow(k) && k.merged && !k.rank).length;   // 웨이퍼가 같아 순위 한 줄에 묶인 원인 후보
   const bridge = causes === nR ? '' : causes - merged === nR ? ` (같은 웨이퍼로 묶으면 순위 ${nR}개)` : ` (순위 ${nR}개)`;
-  const seg = ['fade', '흐리게', 'hide', '숨기기', 'show', '그대로'];
   return [causes ? `<span class="item"><span class="dot" style="background:${C.bad}"></span>원인 후보 ${fmt.int(causes)}개${bridge}</span>` : '',
-    nf ? `<span class="item"><span class="dot hollow" style="border-color:${C.bad}"></span>따라 올라온 점 ${fmt.int(nf)}개${helpIcon('follow')}`
-      + `<span class="seg small" id="ffollow" role="group" aria-label="따라 올라온 점 보기">${[0, 2, 4].map((j) => `<button type="button" data-v="${seg[j]}" class="${S.follow === seg[j] ? 'on' : ''}">${seg[j + 1]}</button>`).join('')}</span></span>` : ''];
+    nf ? `<span class="item"><span class="dot hollow" style="border-color:${C.bad}"></span>따라 올라온 점 ${fmt.int(nf)}개${helpIcon('follow')}</span>` : ''];   // 보기(흐리게 · 숨기기 · 그대로)는 ⚙ 창
 }
 
 // 보정 축 범례: 이 신호 하나만 보면 기준선 밖이지만 판정(종합)은 안 된 점
@@ -1475,17 +1480,12 @@ function showPanel() {
 
 function makePanel() {
   const el = $('#panel-tpl').content.firstElementChild.cloneNode(true);
-  const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pMode: 'judg', pScope: 'step', xMode: 'all', relOpen: false, seq: 0 };   // 보기 선택은 대상을 바꿔도 그대로
-  const size = $('[data-a=size]', el);
-  size.value = S.ptSize;
-  size.addEventListener('input', () => {
-    S.ptSize = +size.value;
-    store.set('uc.ptSize2', S.ptSize);
-    if (p.det) renderScatter(p);
+  const p = { spec: null, el, sel: [], det: null, cMode: 'hi', pEx: false, pScope: 'step', xMode: 'all', relOpen: false, seq: 0 };   // 보기 선택은 대상을 바꿔도 그대로
+  $('[data-r=pexl]', el).textContent = `${exName()}로 보기`;
+  $('[data-a=pex]', el).addEventListener('change', (e) => {   // 경로 비교 세로축: 체크하면 순위 기준, 아니면 위 funnel의 축
+    p.pEx = e.target.checked;
+    if (p.det) renderPeers(p);
   });
-  sigButtons($('[data-r=pseg]', el));
-  if (!S.res.info.has_bad) $('[data-r=pseg] button[data-v=ex]', el).textContent = 'N × ΔValue';
-  bindAxisTips($('[data-r=pseg]', el));
   el.addEventListener('click', (e) => panelClick(p, e));
   const peers = $('[data-r=peers]', el);
   peers.addEventListener('mousemove', (e) => peerTip(p, e));
@@ -1555,13 +1555,13 @@ function panelClick(p, e) {
     return;
   }
   if (!p.det) return;                                      // 새 대상을 불러오는 중에는 칸 · 칩을 누르지 않음
-  const seg = e.target.closest('[data-r=cseg] button, [data-r=pseg] button, [data-r=sseg] button, [data-r=xseg] button');
+  const seg = e.target.closest('[data-r=cseg] button, [data-r=sseg] button, [data-r=xseg] button');
   if (seg) {
     if (seg.disabled) return;
     if (seg.classList.contains('off')) { toast(esc(SIG_OFF), { timeout: 7000 }); return; }
     const r = seg.parentElement.dataset.r;
     setSeg(seg.parentElement, seg.dataset.v);
-    if (r === 'cseg') { p.cMode = seg.dataset.v; renderScatter(p); } else if (r === 'pseg') { p.pMode = seg.dataset.v; renderPeers(p); } else if (r === 'sseg') { p.pScope = seg.dataset.v; renderPeers(p); } else { p.xMode = seg.dataset.v; renderCompare(p); }
+    if (r === 'cseg') { p.cMode = seg.dataset.v; renderScatter(p); } else if (r === 'sseg') { p.pScope = seg.dataset.v; renderPeers(p); } else { p.xMode = seg.dataset.v; renderCompare(p); }
     return;
   }
   const chip = e.target.closest('.chip');
@@ -1833,6 +1833,7 @@ function renderScatter(p) {
 // ── 경로 비교: STEP 전체(이 STEP에서 계산한 모든 조합 · 위 funnel과 같은 눈금) · 같은 Order(고른 Order들을 다른 Unit으로 지난 조합) ──
 const P_AXIS = { judg: '종합 점수', yz: 'y_value (보정)', bz: 'bad 비율 (보정)' };
 const exName = () => (S.res && S.res.info.has_bad ? '초과 bad' : 'N × ΔValue');   // 순위 기준
+const peerMode = (p) => (p.pEx ? 'ex' : S.yMode);   // 경로 비교 세로축: '초과 bad로 보기'를 켜면 순위 기준, 아니면 위 funnel에서 고른 축
 
 // STEP 전체 조합은 STEP마다 한 번 받아 둔다
 function stepData(step) {
@@ -1859,7 +1860,8 @@ function renderPeers(p) {
   const D = p.det;
   const el = $('[data-r=peers]', p.el);
   const [W, H] = svgBox(el);
-  const m = p.pMode;
+  const m = peerMode(p);
+  $('[data-r=paxis]', p.el).textContent = p.pEx ? `세로축: ${exName()} (순위 기준)` : `세로축: ${P_AXIS[m]} · 위 funnel과 같은 축`;
   const stepView = p.pScope === 'step';
   const sel = D.selection;
   const sv = { judg: sel.judg, yz: sel.yz, bz: sel.bz, ex: sel.ex }[m];      // 지금 선택의 값 (따로 크게 그림)
@@ -1955,11 +1957,12 @@ function renderPeerCap(p, info, err) {
     if (err) { el.innerHTML = `<span class="warntxt">${esc(err)}</span>`; return; }
     const r = sel.step_rank;
     const nf = info ? info.flag.filter((f) => f === 3 || f === 4).length : 0;
-    const o = info && (p.pMode === 'yz' ? info.oy : p.pMode === 'bz' ? info.ob : null);
+    const pm = peerMode(p);
+    const o = info && (pm === 'yz' ? info.oy : pm === 'bz' ? info.ob : null);
     const ns = o ? o.filter((v, i) => v && !info.flag[i]).length : 0;   // 이 신호만 보면 밖 · 판정 안 됨
     el.textContent = r ? `${who}: 이 STEP 경로 ${fmt.int(r.total)}개 중 Certainty ${rk(r.cert)} · ${exName()} ${rk(r.ex)}`
       + (nf ? (S.follow === 'hide' ? ` · 따라 올라온 점 ${nf}개 숨김` : S.follow === 'fade' ? ' · 속 빈 빨간 점 = 따라 올라온 점' : '') : '')
-      + (ns ? ` · 테두리 회색 점 = ${p.pMode === 'yz' ? 'y_value' : 'bad'}만 보면 밖(판정 안 됨) ${ns}개` : '')
+      + (ns ? ` · 테두리 회색 점 = ${pm === 'yz' ? 'y_value' : 'bad'}만 보면 밖(판정 안 됨) ${ns}개` : '')
       + (info && info.shown < info.total ? ` · 기준선 안 경로는 ${fmt.int(info.shown)}개만 그림` : '') : '';
     return;
   }
@@ -2092,7 +2095,8 @@ function renderCompare(p) {
   const log = vals.every((v) => v > 0) && skewness(vals) > 1;
   const sv = vals.slice().sort((a, b) => a - b);
   const xs = log ? scaleLog(sv[0] / 1.05, sv[sv.length - 1] * 1.05, L, R) : scaleLin(sv[0], sv[sv.length - 1], L, R);
-  s += `<text x="0" y="${y0}" fill="${C.ink2}" font-size="12">y_value 분포 · 상자 = 가운데 50% · 굵은 선 = 중앙값</text>`;
+  const boxTip = '<title>상자 = 가운데 50% (25~75%) · 굵은 선 = 중앙값 · 가로선 = 5~95%</title>';   // 설명은 상자 · 제목에 마우스를 올리면
+  s += `<text x="0" y="${y0}" fill="${C.ink2}" font-size="12">y_value 분포${boxTip}</text>`;
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
   GR.forEach(([a, l, c], i) => {
@@ -2106,7 +2110,7 @@ function renderCompare(p) {
     const show = a.length > 600 ? a.filter((_, j) => j % Math.ceil(a.length / 600) === 0) : a;
     for (const j of show) s += `<circle cx="${xs(w.v[j]).toFixed(1)}" cy="${(mid + rnd() * 2 * bh).toFixed(1)}" r="2" fill="${c}" opacity="0.45"/>`;
     s += `<line x1="${xs(q[0])}" x2="${xs(q[4])}" y1="${mid}" y2="${mid}" stroke="${c}" stroke-width="1.2"/>`
-      + `<rect x="${xs(q[1])}" y="${mid - bh}" width="${Math.max(1, xs(q[3]) - xs(q[1]))}" height="${2 * bh}" fill="none" stroke="${c}" stroke-width="1.4"/>`
+      + `<rect x="${xs(q[1])}" y="${mid - bh}" width="${Math.max(1, xs(q[3]) - xs(q[1]))}" height="${2 * bh}" fill="${c}" fill-opacity="0" stroke="${c}" stroke-width="1.4">${boxTip}</rect>`
       + `<line x1="${xs(q[2])}" x2="${xs(q[2])}" y1="${mid - bh * 1.15}" y2="${mid + bh * 1.15}" stroke="${C.ink}" stroke-width="2.2"/>`;
   });
   const ay = y0 + 14 + G * row + 4;
@@ -2404,6 +2408,7 @@ function bindFunnel() {
     S.yMode = b.dataset.v;
     setSeg($('#yseg'), S.yMode);
     renderFunnel();
+    if (S.panel && S.panel.det && !S.panel.pEx) renderPeers(S.panel);   // 경로 비교는 funnel의 축을 따라감
   });
   bindAxisTips($('#yseg'));
   const fsv = $('#funnel svg');
@@ -2438,6 +2443,9 @@ function init() {
   S.fView = store.get('uc.fview', 'all');
   S.follow = store.get('uc.follow', 'fade');
   setSeg($('#fview'), S.fView);
+  setSeg($('#ffollow'), S.follow);
+  $('#pt-size').value = S.ptSize;
+  $('#pt-size-v').textContent = S.ptSize;
   document.addEventListener('uc-theme', () => { readColors(); rerender(); });   // 밝은 · 어두운 화면을 바꾸면 차트 색을 다시 읽어 그린다
   watchWidths();
   window.addEventListener('hashchange', route);
@@ -2471,7 +2479,7 @@ function init() {
   $('#drawer-close').addEventListener('click', closeDrawer);
   $('#backdrop').addEventListener('click', closeDrawer);
   $('#empty-all').addEventListener('click', openDrawer);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawer(); setViewPop(false); } });
   document.addEventListener('keydown', (e) => {          // ← →: 상세의 ◀ ▶와 같이 순위(여러 개 골랐으면 고른 대상)를 넘긴다
     if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (S.view !== 'app' || !S.res || $('#drawer').classList.contains('open')) return;
@@ -2520,14 +2528,24 @@ function init() {
     toast(await copyText(text) ? '결론 문장과 실행 링크를 복사했습니다. 회의록 · 메신저에 붙여 넣으세요.' : '복사하지 못했습니다. 문장을 드래그해서 복사하세요.', { kind: '' });
   });
   $('#rank-csv').addEventListener('click', () => { if (S.res) rankingCsv(); });
-  $('#funnel-legend').addEventListener('click', (e) => {   // 따라 올라온 점: 흐리게 · 숨기기 · 그대로 (경로 비교에도 같이)
-    const b = e.target.closest('#ffollow button');
+  $('#ffollow').addEventListener('click', (e) => {   // 따라 올라온 점: 흐리게 · 숨기기 · 그대로 (경로 비교에도 같이)
+    const b = e.target.closest('button');
     if (!b || !S.res) return;
     S.follow = b.dataset.v;
     store.set('uc.follow', S.follow);
     setSeg($('#ffollow'), S.follow);
     drawMarks();
     if (S.panel && S.panel.det) renderPeers(S.panel);
+  });
+  $('#view-btn').addEventListener('click', () => setViewPop($('#view-pop').hidden));
+  document.addEventListener('click', (e) => {          // ⚙ 창 밖을 누르면 닫는다
+    if (!$('#view-pop').hidden && !e.target.closest('#view-pop, #view-btn')) setViewPop(false);
+  });
+  $('#pt-size').addEventListener('input', (e) => {     // 산점도 점 크기 (대상을 바꿔도 그대로 · 브라우저에 기억)
+    S.ptSize = +e.target.value;
+    store.set('uc.ptSize2', S.ptSize);
+    $('#pt-size-v').textContent = S.ptSize;
+    if (S.panel && S.panel.det) renderScatter(S.panel);
   });
   $('#fview').addEventListener('click', (e) => {
     const b = e.target.closest('button');
