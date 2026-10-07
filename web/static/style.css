@@ -7,6 +7,7 @@
   --band: #eef1f4; --hover: #f4f6f8; --accent: #08736e; --accent-bg: #e9f7f6; --accent-line: #bfe9e6; --ring: #0abab5;
   --primary: #0b7f7a; --primary-hover: #096a66; --on-primary: #ffffff;
   --bad: #d14343; --bad-bg: #fbeaea; --good: #2f7fd8; --warn: #9a6200; --radius: 12px;
+  --seq-lo: #c9c4f2; --seq-hi: #3b2f9e;   /* 숫자 열 진하기 (bad 빨강 · good 파랑과 겹치지 않는 보라 한 색): 작음 = 옅음, 큼 = 진함 */
   --brand: #0abab5; --brand-deep: #07857f; --pink: #ff1a8c;
   --shadow: 0 1px 2px #17233a0a, 0 12px 30px -20px #17233a33;
   --font: "Pretendard Variable", Pretendard, Inter, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", "Noto Sans KR", sans-serif;
@@ -19,6 +20,7 @@
   --band: #232a35; --hover: #232a35; --accent: #4fd6d0; --accent-bg: #16302f; --accent-line: #24514e; --ring: #2ccdc7;
   --primary: #2ccdc7; --primary-hover: #4fd6d0; --on-primary: #062321;
   --bad: #e46262; --bad-bg: #3b2324; --good: #5b9be6; --warn: #d7a24a;
+  --seq-lo: #3a3566; --seq-hi: #cdc7ff;   /* 어두운 화면: 작음 = 어둡게, 큼 = 밝게 */
   --brand: #2ccdc7; --brand-deep: #4fd6d0; --pink: #ff5aa8;
   --shadow: 0 1px 2px #0000004d, 0 12px 30px -20px #000000b3;
   --scene-a: #0f141b; --scene-b: #161c25; --cloud: #8a95a5; --px-pin: #8792a2; --px-shade: #0f8f89;
@@ -426,13 +428,12 @@ table.pm-t th.pick { cursor: pointer; }
 table.pm-t th.pick:hover { background: var(--hover); color: var(--ink); }
 table.pm-t th.num { text-align: right; }
 table.pm-t th .ico-sm { width: 13px; height: 13px; margin-right: 4px; color: var(--accent); vertical-align: -2px; }
+.pm-caret { width: 10px; height: 10px; margin-left: 3px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .45; vertical-align: 0; }   /* 눌러 가져올 열 고르기 */
+table.pm-t th.pick:hover .pm-caret { opacity: 1; }
+table.pm-t th.used .pm-hs { color: var(--accent); font-weight: 700; font-size: 10.5px; }   /* 산점도에 쓰는 열 (ROOT_LOT_ID · … · 시간) */
+table.pm-t th.is-y { box-shadow: inset 0 -2px var(--accent); }   /* 지금 Y로 그리는 열 */
 .pm-hl, .pm-hs { display: block; overflow: hidden; text-overflow: ellipsis; }
 .pm-hs { margin-top: 1px; font-size: 11px; font-weight: 400; color: var(--muted); }   /* 붙여넣은 열 이름 (쓰는 이름과 다를 때) */
-table.pm-t th.skip .pm-hl, table.pm-t td.skip { color: var(--muted); }
-table.pm-t th.skip .pm-hs, table.pm-t td.skip { text-decoration: line-through; text-decoration-color: var(--line2); }
-table.pm-t th.unsure { box-shadow: inset 0 -2px var(--warn); }   /* 확실하지 않게 알아본 열: 눌러 확인하면 기억 */
-.pm-q { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-right: 4px; border-radius: 50%; vertical-align: 1px;
-  background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); font-size: 10px; font-weight: 800; }
 table.pm-t td { height: 24px; padding: 0 10px; box-shadow: inset 0 -1px var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 table.pm-t tr.sp td { padding: 0; box-shadow: none; }
 table.pm-t tr.off td { color: var(--muted); }
@@ -458,26 +459,30 @@ button.pm-note { display: inline-flex; align-items: center; gap: 4px; height: 24
   background: color-mix(in srgb, var(--warn) 9%, transparent); color: var(--warn); font-size: 12px; font-weight: 600; }   /* 누르면 그 머리글 메뉴 */
 button.pm-note .ico-sm { width: 13px; height: 13px; margin: 0; }
 button.pm-note:hover { background: color-mix(in srgb, var(--warn) 16%, transparent); }
-/* UD: 위 = 방향 · bad(· good) 막대 · none 구간 · 색 · 묶음별, 가운데 = 산점도, 아래 = 범례(범례용 열 색일 때) */
+/* UD: 위 = 방향 · bad(· good) 막대 · none 구간 · 색 · 직접 정한 수, 가운데 = 산점도(왼쪽 위 Y 고르기), 아래 = 범례(범례용 열 색일 때) */
 .pm-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-height: 34px; }
 .pm-sl { display: inline-flex; align-items: center; gap: 6px; }
 .pm-sl input { width: 170px; height: auto; padding: 0; border: 0; background: none; accent-color: var(--bad); }
 .pm-sl.good input { accent-color: var(--good); }
 .pm-v { min-width: 108px; font-size: 12px; color: var(--ink2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pm-sel { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); }
-.pm-sel select { height: 30px; max-width: 160px; }
 .pm-toggle[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent); }
+.pm-sel { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); }
+.pm-sel select { height: 30px; max-width: 170px; }
 .pm-hand { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink2); font-variant-numeric: tabular-nums; }
 .pm-chart { position: relative; flex: 1; min-height: 220px; }
 .pm-chart canvas, .pm-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .pm-chart svg { cursor: crosshair; touch-action: none; user-select: none; }
 .pm-brush { position: absolute; pointer-events: none; border: 1px dashed var(--ring); background: color-mix(in srgb, var(--ring) 10%, transparent); }
-.pm-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+.pm-ysel { position: absolute; top: 4px; left: 6px; z-index: 1; display: inline-flex; align-items: center; gap: 5px; color: var(--ink2); font-size: 12px; font-weight: 700; }   /* 세로축 = 고른 열 */
+.pm-ysel select { height: 28px; max-width: 200px; padding: 0 8px; font-weight: 600; color: var(--ink); }
 #pm-legend { margin-top: 0; }
 button.pm-cat { height: auto; padding: 1px 4px; border: 0; background: none; color: var(--ink2); font-size: 12px; cursor: pointer; }
 button.pm-cat.off { opacity: .45; text-decoration: line-through; }
+.pm-grad { gap: 8px; font-variant-numeric: tabular-nums; }
+.pm-grad .bar { width: 160px; height: 8px; border-radius: 4px; }
+.pm-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 .pm-menu { position: fixed; z-index: 60; display: flex; align-items: center; gap: 2px; padding: 3px 6px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
-.pm-menu.list { flex-direction: column; align-items: stretch; gap: 0; min-width: 132px; padding: 4px; }   /* 머리글 → 열 역할 */
+.pm-menu.list { flex-direction: column; align-items: stretch; gap: 0; min-width: 132px; max-height: min(70vh, 520px); overflow: auto; padding: 4px; }   /* 머리글 → 가져올 열 */
 .pm-mi { height: 28px; padding: 0 10px 0 26px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font-size: 12px; text-align: left; position: relative; }
 .pm-mi:hover { background: var(--hover); color: var(--ink); }
 .pm-mi.on { color: var(--accent); font-weight: 700; }

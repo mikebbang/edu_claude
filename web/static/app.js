@@ -146,10 +146,10 @@ const HELP = {
   follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
   rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
   pm_open: '웨이퍼 값 붙여넣기: 아래에 표를 펼쳐 엑셀에서 복사한 ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD를 붙여넣고 분석합니다 (다시 누르면 닫힘).',
-  pm_paste: '붙여넣기: 엑셀에서 복사한 뒤 Ctrl+V. 열 이름 목록 없이 값 모양(숫자 · 시각 · G/B · 되풀이), DB 열 이름과 닮은 정도, lot + wafer 한 쌍이 웨이퍼 하나인지로 열을 알아봅니다. 열 이름이 없거나 한글이어도 됩니다. 확실하지 않으면 머리글에 ?가 붙습니다.',
+  pm_paste: '붙여넣기: 엑셀에서 복사한 뒤 Ctrl+V. 표는 붙여넣은 열을 그대로 보여 주고, 그중 ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD · 시간으로 쓸 열을 알아봅니다(나머지는 범례용). 숫자 열이 여럿이면 왼쪽 첫 실수 열을 Y_VALUE로 씁니다.',
   pm_reset: 'RESET: UD로 바꾼 표시를 지워 붙여넣은 GOOD_BAD로 되돌립니다. 바꾼 것이 없으면 표를 비웁니다 (둘 다 되돌리기 가능).',
   pm_ud: 'UD: 표 옆 산점도를 켜고 끕니다. 위 막대나 가로선으로 good/bad를 다시 정하면 표의 GOOD_BAD에 바로 들어갑니다. 붙여넣은 GOOD_BAD를 더 조정하고 싶을 때만 씁니다.',
-  pm_run: '분석 실행: 이 웨이퍼들의 설비 이력을 DB에서 가져와 분석합니다 (GOOD_BAD는 UD로 바꾼 것 포함).',
+  pm_run: '분석 실행: 웨이퍼 목록(ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD, GOOD_BAD는 UD로 바꾼 것 포함)으로 설비 이력을 DB에서 가져와 분석합니다.',
   pm_wafers: 'ROOT_LOT_ID + WAFER_ID 한 쌍이 웨이퍼 하나입니다. 고칠 칸이 있는 줄은 빠집니다.',
   pm_dup: '같은 웨이퍼가 여러 줄입니다. 시간 열이 있으면 처음 · 마지막 줄을, 없으면 평균 · 최소 · 최대를 씁니다.',
   pm_first: '처음: 시간이 가장 이른 줄', pm_last: '마지막: 시간이 가장 늦은 줄',
@@ -157,17 +157,15 @@ const HELP = {
   pm_unused: '중복이라 쓰지 않는 줄 (처음 · 마지막 · 최소 · 최대에서 고르지 않은 줄)',
   pm_gb: 'GOOD_BAD 웨이퍼 수 (UD로 바꾼 것 포함): bad · good · none. good · bad · g · b · OK · NG · PASS · FAIL · 1 · 0처럼 어떻게 적어도 G · B · N으로 바꿔 넘깁니다 (그 밖 · 빈칸은 N = 계산에서 뺌).',
   pm_changed: 'UD로 GOOD_BAD가 바뀐 웨이퍼 수. 표에서 바뀐 칸은 바탕색이 깔립니다 (RESET으로 되돌림).',
-  pm_time: '시간 열: UD 산점도의 가로축으로 쓰고, 중복이면 처음 · 마지막을 고릅니다.',
-  pm_extra: '범례용 열: UD에서 색으로 나누거나 묶음별로 good/bad를 정할 때 씁니다.',
   pm_badcell: '고칠 칸: 빨간 칸(숫자가 아닌 Y_VALUE, 빈 ROOT_LOT_ID · WAFER_ID, 읽지 못한 시간)이 있는 줄은 빠집니다.',
   pm_colw: '끌어서 열 폭 조절 (두 번 누르면 내용에 맞춤)',
-  pm_colrole: '눌러서 이 열을 무엇으로 쓸지 고릅니다 (ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD · 시간 · 범례용 · 안 씀). 고르면 이 열 이름을 기억해 다음부터 바로 맞춥니다. 윗줄 = 쓰는 열, 아랫줄 = 붙여넣은 열 이름.',
-  pm_unsure: '확실하지 않게 알아본 열입니다 (비슷한 열이 더 있음). 눌러 맞는 역할을 고르면 ?가 사라지고 다음부터 기억합니다.',
+  pm_colrole: '눌러서 이 열을 어디에 쓸지 고릅니다 (ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD · 시간 · 범례용). 그 역할을 맡던 열과 서로 바뀌고, 열 이름을 기억해 다음부터 바로 맞춥니다. 윗줄 = 붙여넣은 열 이름, 아랫줄 = 쓰는 곳.',
+  pm_ysel: 'Y축: 그릴 숫자 열을 고릅니다 (기본 = 왼쪽 첫 실수 열, 예: value1 · value2 · value3이면 value1). 고르면 기억하고, 표의 머리글에서도 바꿀 수 있습니다.',
+  pm_color: '색: GOOD_BAD, 범례용 열(값 30가지 이하 = 묶음 색), 숫자 열(진하기: 옅음 = 작음, 진함 = 큼). 묶음 색이면 아래 범례 항목을 눌러 그 묶음을 빼거나(none) 다시 넣습니다.',
+  pm_shade: '진하기: 고른 숫자 열이 작을수록 옅게, 클수록 진하게 칠합니다. 튀는 값에 끌려가지 않게 5~95% 범위로 나누고, 밖의 값은 끝 색입니다.',
   pm_gbunk: 'GOOD_BAD에 뜻을 모르는 값이 있어 N(계산에서 뺌)으로 칩니다. 눌러 값마다 G · B · N을 정하면 다음부터 기억합니다.',
   pm_rz: '끌어서 창 크기 조절 (두 번 누르면 처음 크기)',
   pm_split: '끌어서 표 · 산점도 폭 조절 (두 번 누르면 처음 폭)',
-  pm_color: '색: GOOD_BAD 또는 범례용 열. 범례용 열이면 아래 범례 항목을 눌러 그 묶음을 빼거나(none) 다시 넣습니다.',
-  pm_group: '묶음별로: 고른 열의 묶음마다 따로 비율을 셉니다. 예: PRODUCT마다 위 10%를 bad로.',
   pm_dir_high: '클수록 나쁨 (누르면 작을수록 나쁨)', pm_dir_low: '작을수록 나쁨 (누르면 클수록 나쁨)',
   pm_band: 'none 구간: 켜면 막대 · 선이 둘(bad · good)이 되고 그 사이는 none입니다.',
   pm_hand: '산점도에서 상자로 끌어 직접 정한 웨이퍼 수 (✕로 지움)',
@@ -2584,6 +2582,15 @@ function init() {
     if (!h) return;
     const r = h.getBoundingClientRect();
     showTip(`<div class="help-tip">${esc(HELP[h.dataset.help] || '')}</div>`, r.left, r.bottom - 6);
+  });
+  document.addEventListener('click', (e) => {          // 눌러서 상태가 바뀐 단추(예: 클수록 ↔ 작을수록 나쁨)는 도움말도 바로 새 상태로
+    const h = e.target.closest('[data-help]');
+    if (!h) return;
+    setTimeout(() => {
+      if (!h.isConnected || !h.matches(':hover') || $('#tip').hidden) return;
+      const r = h.getBoundingClientRect();
+      showTip(`<div class="help-tip">${esc(HELP[h.dataset.help] || '')}</div>`, r.left, r.bottom - 6);
+    }, 0);
   });
   document.addEventListener('mouseout', (e) => {
     const h = e.target.closest('[data-help]');

@@ -265,16 +265,15 @@
     <div class="pm-split" id="pm-split" role="separator" aria-orientation="vertical" aria-label="표 · 산점도 폭" tabindex="0" data-help="pm_split" hidden></div>
     <div class="pm-right" id="pm-right" hidden>
       <div class="pm-tools">
-        <button type="button" class="ghost icon-only" id="pm-dir" aria-label="나쁜 쪽 방향 바꾸기"></button>
+        <button type="button" class="ghost icon-only" id="pm-dir" aria-label="클수록 나쁨" data-help="pm_dir_high"></button>
         <div class="pm-sl" data-help="pm_sl_bad"><span class="dot" style="background:var(--bad)"></span><input type="range" id="pm-sl-bad" min="0" max="100" step="0.5" aria-label="bad 비율"><span class="pm-v" id="pm-v-bad"></span></div>
         <div class="pm-sl good" id="pm-sl-good-row" data-help="pm_sl_good" hidden><span class="dot" style="background:var(--good)"></span><input type="range" id="pm-sl-good" min="0" max="100" step="0.5" aria-label="good 비율"><span class="pm-v" id="pm-v-good"></span></div>
         <button type="button" class="ghost icon-only pm-toggle" id="pm-band" aria-pressed="false" aria-label="none 구간" data-help="pm_band"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18" stroke="var(--bad)"/><path d="M3 16h18" stroke="var(--good)"/><path d="M6 12h2M11 12h2M16 12h2"/></svg></button>
         <span class="grow"></span>
         <label class="pm-sel" id="pm-color-wrap" data-help="pm_color"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="2.5"/><circle cx="16" cy="9" r="2.5"/><circle cx="12" cy="16" r="2.5"/></svg><select id="pm-color" aria-label="색"></select></label>
-        <label class="pm-sel" id="pm-group-wrap" data-help="pm_group"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="7" height="14" rx="1.5"/><rect x="13.5" y="5" width="7" height="14" rx="1.5"/></svg><select id="pm-group" aria-label="묶음별로"></select></label>
         <span class="pm-hand" id="pm-hand" data-help="pm_hand" hidden><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 15.5 8.5l-2-2L3 17v2z"/><path d="M15.5 8.5l2-2-2-2-2 2"/></svg><span id="pm-hand-n"></span><button type="button" class="q-x" id="pm-hand-x" aria-label="직접 정한 것 지우기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span>
       </div>
-      <div class="pm-chart" id="pm-chart"><canvas></canvas><svg role="img" aria-label="UD 산점도"></svg><div class="pm-brush" id="pm-brush" hidden></div><div class="pm-empty" id="pm-empty" hidden>웨이퍼가 없습니다 (표 아래 안내를 확인하세요)</div></div>
+      <div class="pm-chart" id="pm-chart"><canvas></canvas><svg role="img" aria-label="UD 산점도"></svg><label class="pm-ysel" data-help="pm_ysel">Y<select id="pm-y" aria-label="Y축 열"></select></label><div class="pm-brush" id="pm-brush" hidden></div><div class="pm-empty" id="pm-empty" hidden>웨이퍼가 없습니다 (표 아래 안내를 확인하세요)</div></div>
       <div class="legend" id="pm-legend" hidden></div>
     </div>
   </div>
