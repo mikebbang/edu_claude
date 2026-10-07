@@ -2494,7 +2494,7 @@ function init() {
     $('#adv-btn').setAttribute('aria-expanded', String(!adv.hidden));
     $('#adv-ico').textContent = adv.hidden ? '▾' : '▴';
   });
-  $('#run').addEventListener('click', run);
+  $('#run').addEventListener('click', () => { if (!pmCardRun()) run(); });   // 붙여넣기 창이 열려 있으면 그 웨이퍼로 (paste.js)
   $('#q-file-x').addEventListener('click', () => { detachFile(); $('#job_id').focus(); });
   $('#job_id').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
   $('#status').addEventListener('click', (e) => { if (e.target.closest('[data-act=paste]')) openPaste(); });

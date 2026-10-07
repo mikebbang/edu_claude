@@ -107,6 +107,7 @@ button.mini svg.ico { width: 14px; height: 14px; margin-right: 4px; fill: none; 
 .q-x { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; flex: none; }
 .q-x:hover { background: var(--card); border: 0; color: var(--accent); }
 .opt-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.run-src { margin-right: 4px; font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }   /* Run이 붙여넣은 웨이퍼로 실행할 때 */
 .setup-close { float: right; height: 28px; margin: -2px -4px 0 8px; font-size: 12px; }
 /* 연 결과가 없을 때 최근 실행 */
 .recent-list { max-height: none; }

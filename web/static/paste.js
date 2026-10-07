@@ -377,11 +377,27 @@ function closePaste() {
   if (back) $(pmHost() === 'home' ? '#home-paste' : '#paste-btn').focus({ preventScroll: true });
 }
 function togglePaste(kind) { if (pmOpen() && pmHost() === kind) closePaste(); else openPaste(kind); }
-function pmButtons() {                                 // 여는 단추 눌림 표시 · 시작 화면 안내 문구 숨김
+function pmButtons() {                                 // 여는 단추 눌림 표시 · 시작 화면 안내 문구 숨김 · 설정 카드 Run이 무엇으로 실행할지
   const open = !$('#pm').hidden;
   $('#home-paste').setAttribute('aria-expanded', String(open && pmHost() === 'home'));
   $('#paste-btn').setAttribute('aria-expanded', String(open && pmHost() === 'card'));
   $('#home').classList.toggle('pm-on', open && pmHost() === 'home');
+  pmRunSrc();
+}
+// 분석 화면에서는 실행 단추가 하나: 설정 카드의 Run. 붙여넣기 창이 열려 있고 웨이퍼가 있으면 그 웨이퍼로, 아니면 Job ID로 실행한다
+// (Run 왼쪽에 무엇으로 실행하는지 적음). Job ID 칸에서 Enter는 늘 Job ID. 시작 화면은 Run이 없어 창의 ▶로 실행
+const pmCardN = () => (pmHost() === 'card' && pmOpen() ? pmData().list.length : 0);
+function pmRunSrc() {
+  const el = $('#run-src');
+  if (!el) return;
+  const n = pmCardN();
+  el.hidden = !n;
+  el.textContent = n ? `붙여넣은 웨이퍼 ${fmt.int(n)}장으로 실행` : '';
+}
+function pmCardRun() {                                 // 설정 카드 Run: 붙여넣은 웨이퍼로 실행했으면 true
+  if (!pmCardN()) return false;
+  pmRun();
+  return true;
 }
 
 // ── 저장 · 붙여넣기 · RESET · 열 역할 ─────────────────────────────────────────────
@@ -527,6 +543,8 @@ function pmLayout() {
   const pm = $('#pm');
   const home = pmHost() === 'home';
   pm.classList.toggle('in-card', !home);
+  $('#pm-run').hidden = !home;                         // 분석 화면은 설정 카드의 Run 하나로
+  pmRunSrc();
   const box = pm.parentElement;
   if (pm.hidden || !box) return;
   const cs = getComputedStyle(box);
@@ -707,8 +725,10 @@ function pmRenderUd() {
   $('#pm-sl-good').value = u.good;
   $('#pm-sl-good-row').hidden = !u.band;
   const [tb, tg] = E.cut;
-  $('#pm-v-bad').textContent = `${fmt.num(u.bad)}%${tb != null ? ` · Y ${u.high ? '≥' : '≤'} ${fmt.num(tb)}` : ''}`;
-  $('#pm-v-good').textContent = `${fmt.num(u.good)}%${tg != null ? ` · Y ${u.high ? '≤' : '≥'} ${fmt.num(tg)}` : ''}`;
+  const n = { B: 0, G: 0 };                            // 막대 옆 장수 = 지금 표의 GOOD_BAD (직접 정한 것 포함)
+  for (const v of E.lab.values()) if (v in n) n[v]++;
+  $('#pm-v-bad').textContent = `${fmt.num(u.bad)}%${tb != null ? ` · Y ${u.high ? '≥' : '≤'} ${fmt.num(tb)}` : ''} · ${fmt.int(n.B)}장`;
+  $('#pm-v-good').textContent = `${fmt.num(u.good)}%${tg != null ? ` · Y ${u.high ? '≤' : '≥'} ${fmt.num(tg)}` : ''} · ${fmt.int(n.G)}장`;
   pmDrawUd(d, E);
 }
 
@@ -790,12 +810,15 @@ function pmDrawUd(d, E) {
   let s = axes({ L: Lm, R, T, B, xs, ys, xt, yt: linTicks(y0, y1, 5).map((v) => ({ v, l: fmt.tick(v) })),
     xl: d.hasT ? (PM.named ? PM.head[pmCol('time')] : '시간') : '웨이퍼 순번 (붙여넣은 순서)', yl: '', yo: 46 });   // 세로축 이름 = 위 Y 고르기
   const [tb, tg] = E.cut;                              // 기준선: 끌어서 옮긴다
-  const line = (v, color, which, label) => {
+  const tw = (t) => { const c = pmDrawUd.g || (pmDrawUd.g = document.createElement('canvas').getContext('2d')); c.font = `700 11px ${getComputedStyle(document.body).fontFamily}`; return c.measureText(t).width; };
+  const line = (v, color, which, label) => {           // 이름표는 바탕을 깔아 점과 겹쳐도 읽히게
     if (v == null) return '';
-    const y = ys(v).toFixed(1);
+    const y = +ys(v).toFixed(1);
+    const w = Math.ceil(tw(label)) + 12;
     return `<g class="pm-line" data-line="${which}" style="cursor:ns-resize"><line x1="${Lm}" x2="${R}" y1="${y}" y2="${y}" stroke="transparent" stroke-width="14"/>`
       + `<line x1="${Lm}" x2="${R}" y1="${y}" y2="${y}" stroke="${color}" stroke-width="2" stroke-dasharray="6 4"/>`
-      + `<text x="${R - 4}" y="${(+y - 6).toFixed(1)}" text-anchor="end" font-size="11" fill="${color}" font-weight="700" stroke="${C.card}" stroke-width="3" paint-order="stroke">${label}</text></g>`;
+      + `<rect x="${R - w}" y="${y - 19}" width="${w}" height="16" rx="5" fill="${C.card}" stroke="${color}" stroke-opacity="0.35"/>`
+      + `<text x="${R - 6}" y="${y - 7}" text-anchor="end" font-size="11" fill="${color}" font-weight="700">${label}</text></g>`;
   };
   s += line(tb, u.band ? C.bad : C.ink, 'bad', u.band ? (u.high ? 'bad ↑' : 'bad ↓') : (u.high ? 'bad ↑ · good ↓' : 'good ↑ · bad ↓'));
   if (u.band) s += line(tg, C.good, 'good', u.high ? 'good ↓' : 'good ↑');
