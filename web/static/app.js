@@ -145,8 +145,8 @@ const HELP = {
   fview_pts: '점 위주: 점이 모인 곳을 크게 보여 줍니다. 점끼리의 차이가 잘 보이지만 띠 양 끝은 잘릴 수 있습니다.',
   follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
   rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
-  pm_open: '웨이퍼 값 붙여넣기: 엑셀에서 ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD를 복사해 붙여넣고 분석합니다.',
-  pm_paste: '붙여넣기: 엑셀에서 복사한 뒤 Ctrl+V. 첫 줄이 열 이름이면 이름으로, 아니면 왼쪽부터 ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD 순서로 맞춥니다. 그 밖의 열은 시간 열이나 범례용 열로 씁니다.',
+  pm_open: '웨이퍼 값 붙여넣기: 아래에 표를 펼쳐 엑셀에서 복사한 ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD를 붙여넣고 분석합니다 (다시 누르면 닫힘).',
+  pm_paste: '붙여넣기: 엑셀에서 복사한 뒤 Ctrl+V. 열 이름 목록 없이 값 모양(숫자 · 시각 · G/B · 되풀이), DB 열 이름과 닮은 정도, lot + wafer 한 쌍이 웨이퍼 하나인지로 열을 알아봅니다. 열 이름이 없거나 한글이어도 됩니다. 확실하지 않으면 머리글에 ?가 붙습니다.',
   pm_reset: 'RESET: UD로 바꾼 표시를 지워 붙여넣은 GOOD_BAD로 되돌립니다. 바꾼 것이 없으면 표를 비웁니다 (둘 다 되돌리기 가능).',
   pm_ud: 'UD: 표 옆 산점도를 켜고 끕니다. 위 막대나 가로선으로 good/bad를 다시 정하면 표의 GOOD_BAD에 바로 들어갑니다. 붙여넣은 GOOD_BAD를 더 조정하고 싶을 때만 씁니다.',
   pm_run: '분석 실행: 이 웨이퍼들의 설비 이력을 DB에서 가져와 분석합니다 (GOOD_BAD는 UD로 바꾼 것 포함).',
@@ -155,12 +155,16 @@ const HELP = {
   pm_first: '처음: 시간이 가장 이른 줄', pm_last: '마지막: 시간이 가장 늦은 줄',
   pm_min: 'min: Y_VALUE가 가장 작은 줄', pm_avg: 'avg: Y_VALUE 평균 (GOOD_BAD가 서로 다르면 B가 하나라도 있으면 B)', pm_max: 'max: Y_VALUE가 가장 큰 줄',
   pm_unused: '중복이라 쓰지 않는 줄 (처음 · 마지막 · 최소 · 최대에서 고르지 않은 줄)',
-  pm_gb: 'GOOD_BAD 웨이퍼 수 (UD로 바꾼 것 포함): bad · good · none(N, 빈칸 포함은 계산에서 뺌)',
+  pm_gb: 'GOOD_BAD 웨이퍼 수 (UD로 바꾼 것 포함): bad · good · none. good · bad · g · b · OK · NG · PASS · FAIL · 1 · 0처럼 어떻게 적어도 G · B · N으로 바꿔 넘깁니다 (그 밖 · 빈칸은 N = 계산에서 뺌).',
   pm_changed: 'UD로 GOOD_BAD가 바뀐 웨이퍼 수. 표에서 바뀐 칸은 바탕색이 깔립니다 (RESET으로 되돌림).',
   pm_time: '시간 열: UD 산점도의 가로축으로 쓰고, 중복이면 처음 · 마지막을 고릅니다.',
   pm_extra: '범례용 열: UD에서 색으로 나누거나 묶음별로 good/bad를 정할 때 씁니다.',
   pm_badcell: '고칠 칸: 빨간 칸(숫자가 아닌 Y_VALUE, 빈 ROOT_LOT_ID · WAFER_ID, 읽지 못한 시간)이 있는 줄은 빠집니다.',
   pm_colw: '끌어서 열 폭 조절 (두 번 누르면 내용에 맞춤)',
+  pm_colrole: '눌러서 이 열을 무엇으로 쓸지 고릅니다 (ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD · 시간 · 범례용 · 안 씀). 고르면 이 열 이름을 기억해 다음부터 바로 맞춥니다. 윗줄 = 쓰는 열, 아랫줄 = 붙여넣은 열 이름.',
+  pm_unsure: '확실하지 않게 알아본 열입니다 (비슷한 열이 더 있음). 눌러 맞는 역할을 고르면 ?가 사라지고 다음부터 기억합니다.',
+  pm_gbunk: 'GOOD_BAD에 뜻을 모르는 값이 있어 N(계산에서 뺌)으로 칩니다. 눌러 값마다 G · B · N을 정하면 다음부터 기억합니다.',
+  pm_rz: '끌어서 창 크기 조절 (두 번 누르면 처음 크기)',
   pm_split: '끌어서 표 · 산점도 폭 조절 (두 번 누르면 처음 폭)',
   pm_color: '색: GOOD_BAD 또는 범례용 열. 범례용 열이면 아래 범례 항목을 눌러 그 묶음을 빼거나(none) 다시 넣습니다.',
   pm_group: '묶음별로: 고른 열의 묶음마다 따로 비율을 셉니다. 예: PRODUCT마다 위 10%를 bad로.',
@@ -2340,7 +2344,6 @@ function bindHome() {
   });
   $('#home-recent').addEventListener('click', () => { if (S.home.mode === 'recent') homeClose(); else homeOpen('recent'); });
   document.addEventListener('pointerdown', (e) => { if (S.home.mode && !e.target.closest('.query-panel')) homeClose(); });
-  $('#home-paste').addEventListener('click', openPaste);   // 웨이퍼 값 붙여넣기 (paste.js)
   const logo = $('.home .uc-logo');                   // 처음 한 번만 움직이고, 다시 돌아오면 그대로
   logo.addEventListener('animationend', (e) => { if (e.target.classList.contains('us')) logo.classList.add('still'); });
 }
@@ -2494,7 +2497,6 @@ function init() {
     $('#adv-ico').textContent = adv.hidden ? '▾' : '▴';
   });
   $('#run').addEventListener('click', run);
-  $('#paste-btn').addEventListener('click', openPaste);
   $('#q-file-x').addEventListener('click', () => { detachFile(); $('#job_id').focus(); });
   $('#job_id').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
   $('#status').addEventListener('click', (e) => { if (e.target.closest('[data-act=paste]')) openPaste(); });
@@ -2505,8 +2507,8 @@ function init() {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawer(); setViewPop(false); } });
   document.addEventListener('keydown', (e) => {          // ← →: 상세의 ◀ ▶와 같이 순위(여러 개 골랐으면 고른 대상)를 넘긴다
     if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    if (S.view !== 'app' || !S.res || $('#drawer').classList.contains('open') || document.body.classList.contains('pm-open')) return;
-    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;   // 글자 칸 · 점 크기 막대에서는 그대로
+    if (S.view !== 'app' || !S.res || $('#drawer').classList.contains('open')) return;
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable], #pm')) return;   // 글자 칸 · 점 크기 막대 · 붙여넣기 창에서는 그대로
     e.preventDefault();
     stepTarget(e.key === 'ArrowLeft' ? -1 : 1);
   });

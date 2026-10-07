@@ -24,7 +24,7 @@
   <section class="query-area" aria-label="Job ID 조회">
     <div class="query-panel">
       <form class="query-form" id="home-form" autocomplete="off">
-        <button class="query-occas-trigger" id="home-paste" type="button" aria-label="웨이퍼 값 붙여넣어 분석">
+        <button class="query-occas-trigger" id="home-paste" type="button" aria-label="웨이퍼 값 붙여넣어 분석" aria-expanded="false" aria-controls="pm">
           <svg class="query-occas-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg>
           <span class="query-icon-tooltip" role="tooltip">웨이퍼 값 붙여넣어 분석</span>
         </button>
@@ -72,7 +72,7 @@
     <button type="button" class="ghost setup-close" id="setup-close" hidden>접기 ▴</button>
     <!-- 데이터: Job ID를 넣거나(DB에서 가져옴) 왼쪽 버튼으로 웨이퍼 값을 붙여넣는다. 실행 기록에서 연 데이터가 있으면 그 데이터로 실행 -->
     <div class="qbar" id="qbar">
-      <button class="q-chip" id="paste-btn" type="button" aria-label="웨이퍼 값 붙여넣어 분석" data-help="pm_open"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg></button>
+      <button class="q-chip" id="paste-btn" type="button" aria-label="웨이퍼 값 붙여넣어 분석" aria-expanded="false" aria-controls="pm" data-help="pm_open"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg></button>
       <span class="q-file" id="q-file" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>
         <span class="q-file-name" id="q-file-name"></span>
@@ -244,9 +244,9 @@
   </article>
 </template>
 
-<!-- 웨이퍼 값 붙여넣기: 표 | UD 산점도(켜고 끔, 사이 막대로 폭 조절). 분석 실행(DB에서 설비 이력 조회)은 DB 함수를 연결한 뒤 -->
-<div class="pm-back" id="pm-back" hidden></div>
-<section class="pm" id="pm" role="dialog" aria-modal="true" aria-label="웨이퍼 값 붙여넣기" hidden>
+<!-- 웨이퍼 값 붙여넣기: 여는 단추를 누르면 시작 화면 검색창(분석 화면은 데이터 줄) 바로 아래로 옮겨 펼친다. 표 | UD 산점도(켜고 끔, 사이 막대로 폭 조절),
+     아래 · 양옆 · 모서리를 끌어 창 크기 조절. 분석 실행(DB에서 설비 이력 조회)은 DB 함수를 연결한 뒤 -->
+<section class="pm" id="pm" role="region" aria-label="웨이퍼 값 붙여넣기" hidden>
   <div class="pm-head">
     <h2>웨이퍼 값</h2>
     <button type="button" class="ghost icon-only" id="pm-paste" aria-label="붙여넣기" data-help="pm_paste"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg></button>
@@ -278,6 +278,8 @@
       <div class="legend" id="pm-legend" hidden></div>
     </div>
   </div>
+  <div class="pm-rz w" data-d="w" data-help="pm_rz"></div><div class="pm-rz e" data-d="e" data-help="pm_rz"></div><div class="pm-rz s" data-d="s" data-help="pm_rz"></div>
+  <div class="pm-rz se" data-d="se" data-help="pm_rz"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M11 4 4 11M11 8 8 11"/></svg></div>
 </section>
 <div class="pm-menu" id="pm-menu" hidden></div>
 <div id="tip" class="tip" hidden></div>
