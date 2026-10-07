@@ -26,7 +26,7 @@ const fmt = {
   tick: (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString('ko-KR') : String(Number(v.toPrecision(3)))),
   date: (ms, withYear) => {
     const t = new Date(ms);
-    const md = String(t.getUTCMonth() + 1).padStart(2, '0') + '-' + String(t.getUTCDate()).padStart(2, '0');   // 시각은 raw.csv 그대로(UTC로 다룸)
+    const md = String(t.getUTCMonth() + 1).padStart(2, '0') + '-' + String(t.getUTCDate()).padStart(2, '0');   // 시각은 데이터에 적힌 그대로(UTC로 다룸)
     return withYear ? t.getUTCFullYear() + '-' + md : md;
   },
 };

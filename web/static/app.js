@@ -1,7 +1,7 @@
 'use strict';
 // 화면 동작
-//  · 시작 화면: Job ID로 실행 기록 찾기 · DB에서 가져와 분석 · raw.csv 올리기 · 최근 실행 · 사용자 가이드
-//  · 분석 화면: 데이터(Job ID 또는 raw.csv) · 설정 → Run(진행 상태) → funnel · 순위표(서로 연동, 여러 개 고르기)
+//  · 시작 화면: Job ID로 실행 기록 찾기 · DB에서 가져와 분석 · 웨이퍼 값 붙여넣기(paste.js) · 최근 실행 · 사용자 가이드
+//  · 분석 화면: 데이터(Job ID, 또는 실행 기록에서 연 데이터) · 설정 → Run(진행 상태) → funnel · 순위표(서로 연동, 여러 개 고르기)
 //    → 여러 개를 고르면 비교 띠 → 상세 하나(◀ ▶ · 비교 띠 · 묶음 버튼으로 대상을 바꿈).
 //    실행 기록에서 고르면 저장된 결과를 다시 계산하지 않고 연다
 // 주소: #run=<실행 id> 그 실행의 결과 · #analysis 분석 화면 · 그 밖은 시작 화면
@@ -17,7 +17,7 @@ const S = {
   cur: null, open: new Set(), panel: null, cmp: null, cmpSeq: 0, cmpPending: null,   // 상세에 보이는 대상 · 묶인 대상을 펼친 순위 · 상세 카드 · 비교 띠 값
   stepCache: new Map(),                               // 경로 비교(STEP 전체)용 조합 · STEP마다 한 번 받음
   runs: [], workers: 1, watch: 0, histTimer: null, histQ: '', defaults: null,
-  db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 raw.csv로만)
+  db: false,                                          // 서버에 DB 접속 정보가 있는지 (없으면 Job ID로는 가져올 수 없음)
   fView: 'all', pendingDel: new Set(), toasts: [], conclText: '', pendingSel: null, cueOn: false, cueTimer: null,   // funnel 보는 범위 · 지우기 기다리는 실행 · 떠 있는 알림 · 결론 문장
   home: { items: [], at: -1, mode: null, q: '', db: false },
 };
@@ -127,7 +127,7 @@ function download(name, rows) {
 }
 const safeName = (x) => String(x ?? '').replace(/[^\w.가-힣-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 60);
 const jobTag = () => safeName((S.res?.info.data.job_ids || [])[0] || 'run');
-const isoTime = (ms) => (ms == null ? '' : new Date(ms).toISOString().slice(0, 19).replace('T', ' '));   // 시각은 raw.csv에 적힌 그대로(시간대 변환 없이)
+const isoTime = (ms) => (ms == null ? '' : new Date(ms).toISOString().slice(0, 19).replace('T', ' '));   // 시각은 데이터에 적힌 그대로(시간대 변환 없이)
 
 // 용어 도움말: data-help가 붙은 곳에 마우스를 올리면 뜻과 예시가 나온다
 const HELP = {
@@ -145,6 +145,30 @@ const HELP = {
   fview_pts: '점 위주: 점이 모인 곳을 크게 보여 줍니다. 점끼리의 차이가 잘 보이지만 띠 양 끝은 잘릴 수 있습니다.',
   follow: '기준선 밖이지만 원인 후보를 따라 함께 넘은 점입니다. 상속 = 원인 경로에 Order를 더 붙인 경로(예: O1:A → O2:B → O3:A), 하위 기인 = 원인 경로의 일부만 쓴 경로(예: O1:A 하나). 판정 엔진이 구분해 둔 것으로, 흐리게 · 숨기기 · 그대로 중에서 고릅니다.',
   rest: '이 경로의 Order를 모두 지났지만 그중 하나 이상에서 다른 Unit을 지난 웨이퍼입니다. 예: 경로가 O1:A → O3:B면 O1과 O3을 모두 지났는데 O1:A → O3:C, O1:D → O3:B처럼 지난 웨이퍼. bad 비율은 그 웨이퍼 전체의 bad 장수 ÷ 웨이퍼 수입니다.',
+  pm_open: '웨이퍼 값 붙여넣기: 엑셀에서 ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD를 복사해 붙여넣고 분석합니다.',
+  pm_paste: '붙여넣기: 엑셀에서 복사한 뒤 Ctrl+V. 첫 줄이 열 이름이면 이름으로, 아니면 왼쪽부터 ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD 순서로 맞춥니다. 그 밖의 열은 시간 열이나 범례용 열로 씁니다.',
+  pm_reset: 'RESET: UD로 바꾼 표시를 지워 붙여넣은 GOOD_BAD로 되돌립니다. 바꾼 것이 없으면 표를 비웁니다 (둘 다 되돌리기 가능).',
+  pm_ud: 'UD: 표 옆 산점도를 켜고 끕니다. 위 막대나 가로선으로 good/bad를 다시 정하면 표의 GOOD_BAD에 바로 들어갑니다. 붙여넣은 GOOD_BAD를 더 조정하고 싶을 때만 씁니다.',
+  pm_run: '분석 실행: 이 웨이퍼들의 설비 이력을 DB에서 가져와 분석합니다 (GOOD_BAD는 UD로 바꾼 것 포함).',
+  pm_wafers: 'ROOT_LOT_ID + WAFER_ID 한 쌍이 웨이퍼 하나입니다. 고칠 칸이 있는 줄은 빠집니다.',
+  pm_dup: '같은 웨이퍼가 여러 줄입니다. 시간 열이 있으면 처음 · 마지막 줄을, 없으면 평균 · 최소 · 최대를 씁니다.',
+  pm_first: '처음: 시간이 가장 이른 줄', pm_last: '마지막: 시간이 가장 늦은 줄',
+  pm_min: 'min: Y_VALUE가 가장 작은 줄', pm_avg: 'avg: Y_VALUE 평균 (GOOD_BAD가 서로 다르면 B가 하나라도 있으면 B)', pm_max: 'max: Y_VALUE가 가장 큰 줄',
+  pm_unused: '중복이라 쓰지 않는 줄 (처음 · 마지막 · 최소 · 최대에서 고르지 않은 줄)',
+  pm_gb: 'GOOD_BAD 웨이퍼 수 (UD로 바꾼 것 포함): bad · good · none(N, 빈칸 포함은 계산에서 뺌)',
+  pm_changed: 'UD로 GOOD_BAD가 바뀐 웨이퍼 수. 표에서 바뀐 칸은 바탕색이 깔립니다 (RESET으로 되돌림).',
+  pm_time: '시간 열: UD 산점도의 가로축으로 쓰고, 중복이면 처음 · 마지막을 고릅니다.',
+  pm_extra: '범례용 열: UD에서 색으로 나누거나 묶음별로 good/bad를 정할 때 씁니다.',
+  pm_badcell: '고칠 칸: 빨간 칸(숫자가 아닌 Y_VALUE, 빈 ROOT_LOT_ID · WAFER_ID, 읽지 못한 시간)이 있는 줄은 빠집니다.',
+  pm_colw: '끌어서 열 폭 조절 (두 번 누르면 내용에 맞춤)',
+  pm_split: '끌어서 표 · 산점도 폭 조절 (두 번 누르면 처음 폭)',
+  pm_color: '색: GOOD_BAD 또는 범례용 열. 범례용 열이면 아래 범례 항목을 눌러 그 묶음을 빼거나(none) 다시 넣습니다.',
+  pm_group: '묶음별로: 고른 열의 묶음마다 따로 비율을 셉니다. 예: PRODUCT마다 위 10%를 bad로.',
+  pm_dir_high: '클수록 나쁨 (누르면 작을수록 나쁨)', pm_dir_low: '작을수록 나쁨 (누르면 클수록 나쁨)',
+  pm_band: 'none 구간: 켜면 막대 · 선이 둘(bad · good)이 되고 그 사이는 none입니다.',
+  pm_hand: '산점도에서 상자로 끌어 직접 정한 웨이퍼 수 (✕로 지움)',
+  pm_sl_bad: '나쁜 쪽에서 몇 %를 bad로 할지. 산점도의 선을 끌어도 됩니다. 움직이면 표의 GOOD_BAD가 바로 바뀝니다.',
+  pm_sl_good: '좋은 쪽에서 몇 %를 good으로 할지 (나머지는 none).',
   relwhy: '웨이퍼가 거의 같은(설정한 비율 이상, 기본 90%) 대상은 순위표에 한 줄로 묶습니다. 대표는 순위 기준값(초과 bad, good_bad가 없으면 N × ΔValue)이 큰 쪽이고, 같으면 계산에서 먼저 나온 쪽(대개 STEP 순서가 앞선 쪽)입니다. 겹침이 100%면 데이터로는 어느 STEP 탓인지 가릴 수 없고, 100%보다 작으면 \'서로 다른 웨이퍼\'의 bad가 차이를 만듭니다.',
   crosswhy: '이 경로에서 아래 경로를 지난 웨이퍼를 빼면 차이가 사라지고, 아래 경로는 이 경로의 웨이퍼를 빼도 기준선을 넘습니다. 그래서 진짜 원인은 아래 경로일 수 있습니다.',
   sig: '이 축의 신호 하나만 보면 기준선 밖이지만, 두 신호를 합친 판정(종합)에서는 기준선 안이라 혐의 대상이 아닌 경로입니다. 예: y_value는 꽤 높은데 bad는 평소와 같은 경로. 판정에 쓰는 것은 종합이라 순위에 오르지 않습니다.',
@@ -157,23 +181,6 @@ async function loadFiles(selectId) {
   if (selectId) attachFile(selectId);
 }
 
-function upload(file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const fd = new FormData();
-    fd.append('file', file);
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
-    xhr.onload = () => {
-      let b = null;
-      try { b = JSON.parse(xhr.responseText); } catch { b = null; }
-      if (xhr.status < 300) resolve(b); else reject(new Error((b && b.detail) || xhr.statusText));
-    };
-    xhr.onerror = () => reject(new Error('올리지 못했습니다. 네트워크를 확인하세요.'));
-    xhr.open('POST', '/api/upload');
-    xhr.send(fd);
-  });
-}
-const uploadBar = (name, p) => `올리는 중 · ${esc(name)} · ${Math.round(p * 100)}%<div class="bar"><i style="width:${p * 100}%"></i></div>`;
 
 // ── 설정 · 실행 ─────────────────────────────────────────────────────────
 function settings() {
@@ -198,7 +205,7 @@ function settings() {
 const STAGE_FRAC = { queued: 0.01, start: 0.02, fetch: 0.04, read: 0.08, prepare: 0.22, analyze: 0.3, judge: 0.86, payload: 0.95 };
 const JOB_RE = /^\d{1,18}$/;
 
-// Run에 쓸 데이터: 왼쪽 csv로 붙인 raw.csv가 있으면 그 파일, 없으면 Job ID로 DB에서 가져온다
+// Run에 쓸 데이터: 실행 기록에서 연 데이터(그 실행의 파일)가 있으면 그 파일, 없으면 Job ID로 DB에서 가져온다
 function attachFile(id, name) {
   const f = S.files.find((x) => x.id === id);
   S.fileId = id;
@@ -214,20 +221,20 @@ function detachFile(jid) {
   if (jid != null) $('#job_id').value = jid;
 }
 
-function syncDb() {                                   // 서버에 DB 접속 정보가 없으면 Job ID 칸을 막고 raw.csv로 안내
+function syncDb() {                                   // 서버에 DB 접속 정보가 없으면 Job ID 칸을 막고 안내
   const inp = $('#job_id');
   inp.disabled = !S.db;
-  inp.placeholder = S.db ? 'Job ID를 입력하세요 (예: 2281935)' : '서버에 DB 접속 정보가 없습니다 · 왼쪽 csv로 raw.csv를 올리세요';
+  inp.placeholder = S.db ? 'Job ID를 입력하세요 (예: 2281935)' : '서버에 DB 접속 정보가 없습니다';
   const note = $('#src-note');
   note.hidden = S.db;
-  note.textContent = S.db ? '' : 'Job ID로 가져오려면 관리자가 서버의 .env에 COMBI_DB_URL을 넣어야 합니다. 지금은 raw.csv로 분석할 수 있습니다.';
+  note.textContent = S.db ? '' : 'Job ID로 가져오려면 관리자가 서버의 .env에 COMBI_DB_URL을 넣어야 합니다.';
 }
 
 async function run() {
   const job = !S.fileId;
   const jid = $('#job_id').value.trim();
-  if (job && !S.db) { status('왼쪽 csv로 raw.csv를 올려 주세요. 서버에 DB 접속 정보가 없어 Job ID로는 가져올 수 없습니다.', 'error'); return; }
-  if (job && !JOB_RE.test(jid)) { status('Job ID를 숫자로 넣거나(예: 2281935) 왼쪽 csv로 raw.csv를 올려 주세요.', 'error'); $('#job_id').focus(); return; }
+  if (job && !S.db) { status('서버에 DB 접속 정보가 없어 Job ID로는 가져올 수 없습니다. 왼쪽 버튼으로 웨이퍼 값을 붙여넣어 보세요.', 'error'); return; }
+  if (job && !JOB_RE.test(jid)) { status('Job ID를 숫자로 넣으세요(예: 2281935).', 'error'); $('#job_id').focus(); return; }
   $('#run').disabled = true;
   let r;
   try {
@@ -353,7 +360,7 @@ async function openRun(id, note = '', push = true) {
   const v = S.runs.find((x) => x.id === id);
   if (v) {
     fillSettings(v.settings);
-    if (v.file_exists) attachFile(v.file_id, v.file_name);   // DB에서 가져온 실행도 다시 돌릴 때는 가져온 raw.csv를 쓴다
+    if (v.file_exists) attachFile(v.file_id, v.file_name);   // DB에서 가져온 실행도 다시 돌릴 때는 그때 가져온 데이터를 쓴다
     else if (v.job_source) detachFile(v.job_source);
   }
   renderHistory();
@@ -378,7 +385,7 @@ async function openRun(id, note = '', push = true) {
       if (v && v.status !== 'done') refreshRuns();
       hideLoader();
       if (st.job_source && st.file_exists && S.fileId !== st.file_id) {
-        try { await loadFiles(st.file_id); } catch { /* 파일 목록을 못 읽어도 결과는 연다 */ }   // DB에서 가져온 raw.csv를 붙여 두어 설정만 바꿔 다시 돌릴 때는 DB에 다시 묻지 않는다
+        try { await loadFiles(st.file_id); } catch { /* 파일 목록을 못 읽어도 결과는 연다 */ }   // DB에서 가져온 데이터를 붙여 두어 설정만 바꿔 다시 돌릴 때는 DB에 다시 묻지 않는다
       }
       await loadResult(id, token, note);
       return;
@@ -386,9 +393,9 @@ async function openRun(id, note = '', push = true) {
     hideResults();
     if (st.status === 'error') {
       hideLoader();
-      if (st.no_data) {                                  // DB에 없으면 raw.csv를 올려서 분석
+      if (st.no_data) {                                  // DB에 없으면 웨이퍼 값을 붙여넣어 분석
         detachFile();
-        status(`${esc(st.error)} <button type="button" class="mini" data-act="upload">raw.csv 올리기</button>`, 'error');
+        status(`DB에 job_id ${esc(st.job_source || '')} 데이터가 없습니다. 웨이퍼 값을 붙여넣어 분석하세요. <button type="button" class="mini" data-act="paste">붙여넣기</button>`, 'error');
       } else status('실행 중 오류: ' + esc(st.error), 'error');
       refreshRuns();
       return;
@@ -484,7 +491,7 @@ function renderMeta() {
   const v = S.runs.find((x) => x.id === S.runId);
   const st = settingsText(I.settings);
   const job = v ? v.job_source : null;
-  const name = v ? (job ? `job ${job}` : v.file_name || 'raw.csv') : S.fileId ? $('#q-file-name').textContent : `job ${$('#job_id').value}`;
+  const name = v ? (job ? `job ${job}` : v.file_name || '데이터') : S.fileId ? $('#q-file-name').textContent : `job ${$('#job_id').value}`;
   $('#meta-src').innerHTML = `${job ? ICON_DB : ICON_FILE}${esc(name)}`;
   $('#meta-text').textContent = [`${fmt.int(d.wafers)}장`, d.bad_rate != null ? `bad ${fmt.pct(d.bad_rate)}` : '',
     `경로 ${fmt.int(j.combos)}개 검사 → 기준선 밖 ${fmt.int(j.over)}개`, st.main, st.extra].filter(Boolean).join(' · ');
@@ -668,7 +675,7 @@ function renderHistory() {
   const rows = q ? all.filter((v) => hay(v).includes(q)) : all;
   $('#hist-sub').textContent = all.length ? `${all.length}개 · 고르면 다시 계산하지 않고 저장된 결과를 엽니다 · 모든 사용자가 함께 보는 목록` : '';
   if (!rows.length) {
-    $('#history').innerHTML = `<div class="empty muted">${all.length ? '찾는 기록이 없습니다.' : '아직 실행 기록이 없습니다. Job ID를 넣거나 raw.csv를 올리고 Run을 누르면 여기에 남습니다.'}</div>`;
+    $('#history').innerHTML = `<div class="empty muted">${all.length ? '찾는 기록이 없습니다.' : '아직 실행 기록이 없습니다. Job ID로 실행하거나 웨이퍼 값을 붙여넣어 분석하면 여기에 남습니다.'}</div>`;
     return;
   }
   $('#history').innerHTML = runTable(rows, true);
@@ -2272,11 +2279,11 @@ function homeRender() {
   const n = Math.min(8, items.length);
   const dbRow = db ? `<div class="hl-row hl-db${at === n ? ' on' : ''}" id="hl-${n}" role="option" aria-selected="${at === n}" data-db="${esc(q)}">
       <div class="hl-job"><b>DB에서 job_id ${esc(q)} 가져와 분석</b></div><div class="hl-res">새로 실행 →</div>
-      <div class="hl-meta">DB에서 이력을 읽어 raw.csv를 만든 뒤 기본 설정(${esc(settingsText(S.defaults || {}).main)})으로 실행합니다. 데이터가 없으면 raw.csv를 올리라고 알려 드립니다.</div></div>` : '';
+      <div class="hl-meta">DB에서 이력을 읽어 기본 설정(${esc(settingsText(S.defaults || {}).main)})으로 실행합니다. 데이터가 없으면 붙여넣기로 분석하라고 알려 드립니다.</div></div>` : '';
   const head = mode === 'recent' ? '최근 실행' : items.length ? `‘${esc(q)}’ 실행 기록 ${items.length}개${items.length > 8 ? ' (최근 8개)' : ''}` : `‘${esc(q)}’`;
   const noDb = mode === 'search' && JOB_RE.test(q) && !S.db ? ' 서버에 DB 접속 정보가 없어 Job ID로는 가져올 수 없습니다.' : '';
-  const empty = mode === 'recent' ? '아직 실행 기록이 없습니다. Job ID를 넣거나 왼쪽 CSV 버튼으로 raw.csv를 올려 시작하세요.'
-    : `‘${esc(q)}’로 실행한 기록이 없습니다.${noDb} 왼쪽 CSV 버튼으로 이 Job의 raw.csv를 올려 분석할 수 있습니다.`;
+  const empty = mode === 'recent' ? '아직 실행 기록이 없습니다. Job ID를 넣거나 왼쪽 버튼으로 웨이퍼 값을 붙여넣어 시작하세요.'
+    : `‘${esc(q)}’로 실행한 기록이 없습니다.${noDb} 왼쪽 버튼으로 웨이퍼 값을 붙여넣어 분석할 수 있습니다.`;
   box.innerHTML = `<div class="hl-head">${head}</div>${rows || (db ? '' : `<div class="hl-empty">${empty}</div>`)}${dbRow}<a class="hl-all" href="#analysis">전체 실행 기록 · 설정 화면으로 →</a>`;
   box.hidden = false;
   input.setAttribute('aria-expanded', 'true');
@@ -2288,7 +2295,7 @@ function homePick(id) {
   go('#run=' + id);
 }
 
-// Job ID로 DB에서 가져와 실행 (기본 설정). 데이터가 없으면 분석 화면에서 raw.csv를 올리라고 안내한다
+// Job ID로 DB에서 가져와 실행 (기본 설정). 데이터가 없으면 분석 화면에서 붙여넣기로 안내한다
 async function homeFetch(jid) {
   homeClose();
   homeMsg(`DB에서 job_id ${esc(jid)} 가져오기를 시작합니다…`);
@@ -2333,26 +2340,7 @@ function bindHome() {
   });
   $('#home-recent').addEventListener('click', () => { if (S.home.mode === 'recent') homeClose(); else homeOpen('recent'); });
   document.addEventListener('pointerdown', (e) => { if (S.home.mode && !e.target.closest('.query-panel')) homeClose(); });
-  $('#home-upload').addEventListener('click', () => $('#home-file').click());
-  $('#home-file').addEventListener('change', async (e) => {
-    const f = e.target.files[0];
-    e.target.value = '';
-    if (!f) return;
-    const btn = $('#home-upload');
-    btn.disabled = true;
-    try {
-      const meta = await upload(f, (pr) => homeMsg(uploadBar(f.name, pr)));
-      await loadFiles(meta.id);
-      homeMsg('');
-      go('#analysis');
-      status('');
-      toast(`올렸습니다 · ${esc(meta.name)} (${(meta.size / 1e6).toFixed(0)}MB). 설정을 확인하고 Run을 누르세요.`);
-      $('#run').focus();
-    } catch (err) {
-      homeMsg(esc(err.message), 'error');
-    }
-    btn.disabled = false;
-  });
+  $('#home-paste').addEventListener('click', openPaste);   // 웨이퍼 값 붙여넣기 (paste.js)
   const logo = $('.home .uc-logo');                   // 처음 한 번만 움직이고, 다시 돌아오면 그대로
   logo.addEventListener('animationend', (e) => { if (e.target.classList.contains('us')) logo.classList.add('still'); });
 }
@@ -2498,19 +2486,6 @@ function init() {
   watchWidths();
   window.addEventListener('hashchange', route);
   window.addEventListener('popstate', route);
-  $('#file').addEventListener('change', async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    try {
-      const meta = await upload(f, (p) => status(uploadBar(f.name, p)));
-      await loadFiles(meta.id);
-      status('');
-      toast(`올렸습니다 · ${esc(meta.name)} (${(meta.size / 1e6).toFixed(0)}MB). Run을 누르세요.`);
-    } catch (err) {
-      status(esc(err.message), 'error');
-    }
-    e.target.value = '';
-  });
   $('#no_limit').addEventListener('change', (e) => { $('#max_depth').disabled = e.target.checked; });
   $('#adv-btn').addEventListener('click', () => {
     const adv = $('#adv');
@@ -2519,10 +2494,10 @@ function init() {
     $('#adv-ico').textContent = adv.hidden ? '▾' : '▴';
   });
   $('#run').addEventListener('click', run);
-  $('#csv-btn').addEventListener('click', () => $('#file').click());
+  $('#paste-btn').addEventListener('click', openPaste);
   $('#q-file-x').addEventListener('click', () => { detachFile(); $('#job_id').focus(); });
   $('#job_id').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
-  $('#status').addEventListener('click', (e) => { if (e.target.closest('[data-act=upload]')) $('#file').click(); });
+  $('#status').addEventListener('click', (e) => { if (e.target.closest('[data-act=paste]')) openPaste(); });
   $('#top-history').addEventListener('click', () => { if ($('#drawer').classList.contains('open')) closeDrawer(); else openDrawer(); });
   $('#drawer-close').addEventListener('click', closeDrawer);
   $('#backdrop').addEventListener('click', closeDrawer);
@@ -2530,7 +2505,7 @@ function init() {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawer(); setViewPop(false); } });
   document.addEventListener('keydown', (e) => {          // ← →: 상세의 ◀ ▶와 같이 순위(여러 개 골랐으면 고른 대상)를 넘긴다
     if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    if (S.view !== 'app' || !S.res || $('#drawer').classList.contains('open')) return;
+    if (S.view !== 'app' || !S.res || $('#drawer').classList.contains('open') || document.body.classList.contains('pm-open')) return;
     if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;   // 글자 칸 · 점 크기 막대에서는 그대로
     e.preventDefault();
     stepTarget(e.key === 'ArrowLeft' ? -1 : 1);

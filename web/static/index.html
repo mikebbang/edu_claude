@@ -10,7 +10,7 @@
 <script src="theme.js"></script>
 </head>
 <body>
-<!-- 시작 화면: Job ID로 실행 기록 찾기 · raw.csv 올리기 · 최근 실행 · 사용자 가이드 -->
+<!-- 시작 화면: Job ID로 실행 기록 찾기 · 웨이퍼 값 붙여넣기 · 최근 실행 · 사용자 가이드 -->
 <main id="home" class="home" hidden>
   <div class="home-corner">
   <button class="icon-btn theme-btn" type="button" data-theme-toggle title="어두운 화면으로" aria-label="어두운 화면으로">
@@ -24,11 +24,10 @@
   <section class="query-area" aria-label="Job ID 조회">
     <div class="query-panel">
       <form class="query-form" id="home-form" autocomplete="off">
-        <button class="query-occas-trigger" id="home-upload" type="button" aria-label="raw.csv 올려서 분석">
-          <svg class="query-occas-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
-          <span class="query-occas-label">csv</span><span class="query-icon-tooltip" role="tooltip">raw.csv 올려서 분석</span>
+        <button class="query-occas-trigger" id="home-paste" type="button" aria-label="웨이퍼 값 붙여넣어 분석">
+          <svg class="query-occas-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg>
+          <span class="query-icon-tooltip" role="tooltip">웨이퍼 값 붙여넣어 분석</span>
         </button>
-        <input type="file" id="home-file" accept=".csv" hidden>
         <label>
           <span class="visually-hidden">Job ID</span>
           <input id="home-q" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Job ID를 입력하세요"
@@ -44,7 +43,7 @@
       <div class="home-pop" id="home-list" role="listbox" aria-label="실행 기록" hidden></div>
     </div>
     <div class="home-msg" id="home-msg" aria-live="polite"></div>
-    <p class="home-hint">Job ID로 지난 실행을 찾거나, 왼쪽 <b>CSV</b> 버튼으로 데이터를 올려 새로 분석합니다.</p>
+    <p class="home-hint">Job ID로 지난 실행을 찾거나, 왼쪽 버튼으로 웨이퍼 값을 붙여넣어 새로 분석합니다.</p>
   </section>
 </main>
 
@@ -71,12 +70,9 @@
     <!-- 결과가 나오면 이 카드는 숨기고, 결론 카드 아래 한 줄의 [설정 바꾸기]로 다시 연다 -->
     <div class="setup-full" id="setup-full">
     <button type="button" class="ghost setup-close" id="setup-close" hidden>접기 ▴</button>
-    <!-- 데이터: Job ID를 넣거나(DB에서 가져옴) 왼쪽 csv로 raw.csv를 붙인다. 붙인 파일이 있으면 그 파일로 실행 -->
+    <!-- 데이터: Job ID를 넣거나(DB에서 가져옴) 왼쪽 버튼으로 웨이퍼 값을 붙여넣는다. 실행 기록에서 연 데이터가 있으면 그 데이터로 실행 -->
     <div class="qbar" id="qbar">
-      <button class="q-chip" id="csv-btn" type="button" title="raw.csv 올려서 분석" aria-label="raw.csv 올려서 분석">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>csv</span>
-      </button>
-      <input type="file" id="file" accept=".csv" hidden>
+      <button class="q-chip" id="paste-btn" type="button" aria-label="웨이퍼 값 붙여넣어 분석" data-help="pm_open"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg></button>
       <span class="q-file" id="q-file" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>
         <span class="q-file-name" id="q-file-name"></span>
@@ -248,11 +244,48 @@
   </article>
 </template>
 
+<!-- 웨이퍼 값 붙여넣기: 표 | UD 산점도(켜고 끔, 사이 막대로 폭 조절). 분석 실행(DB에서 설비 이력 조회)은 DB 함수를 연결한 뒤 -->
+<div class="pm-back" id="pm-back" hidden></div>
+<section class="pm" id="pm" role="dialog" aria-modal="true" aria-label="웨이퍼 값 붙여넣기" hidden>
+  <div class="pm-head">
+    <h2>웨이퍼 값</h2>
+    <button type="button" class="ghost icon-only" id="pm-paste" aria-label="붙여넣기" data-help="pm_paste"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg></button>
+    <button type="button" class="ghost icon-only" id="pm-reset" aria-label="RESET" data-help="pm_reset"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg></button>
+    <button type="button" class="ghost icon-only pm-toggle" id="pm-ud" aria-pressed="false" aria-label="UD" data-help="pm_ud"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16"/><circle cx="8.5" cy="14.5" r="1.3"/><circle cx="12" cy="10" r="1.3"/><circle cx="15.5" cy="13" r="1.3"/><circle cx="18" cy="7.5" r="1.3"/><path d="M6 11.5h14" stroke-dasharray="2 2"/></svg></button>
+    <span class="grow"></span>
+    <button type="button" class="primary icon-only" id="pm-run" aria-label="분석 실행" data-help="pm_run"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg></button>
+    <button type="button" class="ghost icon-only" id="pm-close" aria-label="닫기" title="닫기 (Esc)"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="pm-body" id="pm-body">
+    <div class="pm-left" id="pm-left">
+      <div class="pm-drop" id="pm-drop" tabindex="0"><svg class="pm-drop-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg><b>엑셀에서 복사해 Ctrl+V</b><span class="muted small">ROOT_LOT_ID · WAFER_ID · Y_VALUE · GOOD_BAD (+ 시간 · 범례용 열)</span></div>
+      <div class="pm-grid" id="pm-grid" tabindex="0" hidden></div>
+      <div class="pm-sum" id="pm-sum"></div>
+    </div>
+    <div class="pm-split" id="pm-split" role="separator" aria-orientation="vertical" aria-label="표 · 산점도 폭" tabindex="0" data-help="pm_split" hidden></div>
+    <div class="pm-right" id="pm-right" hidden>
+      <div class="pm-tools">
+        <button type="button" class="ghost icon-only" id="pm-dir" aria-label="나쁜 쪽 방향 바꾸기"></button>
+        <div class="pm-sl" data-help="pm_sl_bad"><span class="dot" style="background:var(--bad)"></span><input type="range" id="pm-sl-bad" min="0" max="100" step="0.5" aria-label="bad 비율"><span class="pm-v" id="pm-v-bad"></span></div>
+        <div class="pm-sl good" id="pm-sl-good-row" data-help="pm_sl_good" hidden><span class="dot" style="background:var(--good)"></span><input type="range" id="pm-sl-good" min="0" max="100" step="0.5" aria-label="good 비율"><span class="pm-v" id="pm-v-good"></span></div>
+        <button type="button" class="ghost icon-only pm-toggle" id="pm-band" aria-pressed="false" aria-label="none 구간" data-help="pm_band"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18" stroke="var(--bad)"/><path d="M3 16h18" stroke="var(--good)"/><path d="M6 12h2M11 12h2M16 12h2"/></svg></button>
+        <span class="grow"></span>
+        <label class="pm-sel" id="pm-color-wrap" data-help="pm_color"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="2.5"/><circle cx="16" cy="9" r="2.5"/><circle cx="12" cy="16" r="2.5"/></svg><select id="pm-color" aria-label="색"></select></label>
+        <label class="pm-sel" id="pm-group-wrap" data-help="pm_group"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="7" height="14" rx="1.5"/><rect x="13.5" y="5" width="7" height="14" rx="1.5"/></svg><select id="pm-group" aria-label="묶음별로"></select></label>
+        <span class="pm-hand" id="pm-hand" data-help="pm_hand" hidden><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 15.5 8.5l-2-2L3 17v2z"/><path d="M15.5 8.5l2-2-2-2-2 2"/></svg><span id="pm-hand-n"></span><button type="button" class="q-x" id="pm-hand-x" aria-label="직접 정한 것 지우기"><svg class="ico-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span>
+      </div>
+      <div class="pm-chart" id="pm-chart"><canvas></canvas><svg role="img" aria-label="UD 산점도"></svg><div class="pm-brush" id="pm-brush" hidden></div><div class="pm-empty" id="pm-empty" hidden>웨이퍼가 없습니다 (표 아래 안내를 확인하세요)</div></div>
+      <div class="legend" id="pm-legend" hidden></div>
+    </div>
+  </div>
+</section>
+<div class="pm-menu" id="pm-menu" hidden></div>
 <div id="tip" class="tip" hidden></div>
 <!-- 상세가 화면 아래에 있을 때 대상을 바꾸면 잠깐 뜨는 단추: 누르면 상세로 내려간다 -->
 <button type="button" class="detail-cue" id="detail-cue" hidden></button>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="charts.js"></script>
 <script src="app.js"></script>
+<script src="paste.js"></script>
 </body>
 </html>

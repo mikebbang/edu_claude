@@ -1,4 +1,4 @@
-"""UNIT_COMMONALITY 웹 서버: raw.csv 업로드 → 판정 실행(따로 프로세스에서, 여러 개 동시에) → funnel · 순위표 · 상세 화면.
+"""UNIT_COMMONALITY 웹 서버: Job ID로 DB에서 이력 가져오기 → 판정 실행(따로 프로세스에서, 여러 개 동시에) → funnel · 순위표 · 상세 화면.
 실행마다 data/runs/<id>/에 설정 · 결과 · 상세용 데이터를 저장해 두어, 실행 기록에서 고르면 다시 계산하지 않고 연다"""
 import hashlib
 import json
@@ -12,10 +12,9 @@ import time
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -161,20 +160,6 @@ def _file_meta(fid):
         return {}
 
 
-@app.post('/api/upload')
-def upload(file: UploadFile = File(...)):
-    name = Path(file.filename or 'raw.csv').name
-    if not name.lower().endswith('.csv'):
-        raise HTTPException(400, 'CSV 파일만 올릴 수 있습니다.')
-    fid = uuid.uuid4().hex[:12]
-    dest = UPLOADS / f'{fid}.csv'
-    with dest.open('wb') as f:
-        shutil.copyfileobj(file.file, f, 8 * 1024 * 1024)
-    meta = {'id': fid, 'name': name, 'size': dest.stat().st_size, 'uploaded': datetime.now().isoformat(timespec='seconds')}
-    (UPLOADS / f'{fid}.json').write_text(json.dumps(meta, ensure_ascii=False), encoding='utf-8')
-    return meta
-
-
 @app.get('/api/files')
 def files():
     out = []
@@ -245,7 +230,7 @@ def start_job(req: JobRequest):
     except (TypeError, ValueError) as e:
         raise HTTPException(400, str(e))
     if not db.db_url():
-        raise HTTPException(503, 'DB 접속 정보가 없어 job_id로 가져올 수 없습니다. raw.csv를 올리거나, 서버의 .env 파일에 COMBI_DB_URL을 넣고 서버를 다시 켜 주세요.')
+        raise HTTPException(503, 'DB 접속 정보가 없어 job_id로 가져올 수 없습니다. 서버의 .env 파일에 COMBI_DB_URL을 넣고 서버를 다시 켜 주세요.')
     with lock:
         for v in runs.values():                       # 같은 job_id · 같은 설정으로 가져오는 중이면 그 실행을 같이 본다
             if v.get('job_source') == jid and v['settings'] == cfg and v['status'] in ACTIVE and v.get('code') == CODE:
